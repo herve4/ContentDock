@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ContentDock</string>
+    <string name="title_activity_main">ContentDock</string>
+    <string name="package_name">com.contentdock.app</string>
+    <string name="custom_url_scheme">com.contentdock.app</string>
+</resources>

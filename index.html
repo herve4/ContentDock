@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ContentDock — Plateforme de Publication Autonome (Desktop & Android)</title>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#ff5a1f"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css"/>
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+<script src="vendor/sql-wasm.js"></script>
+</head>
+<body>
+<div id="app-startup-loader" style="position:fixed;inset:0;background:#0a0a0b;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999999;font-family:'Inter Tight',-apple-system,sans-serif;color:#ececf1;-webkit-user-select:none;user-select:none;transition:opacity 0.4s ease, visibility 0.4s ease;">
+  <div style="position:relative;width:84px;height:84px;display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
+    <div style="position:absolute;inset:0;border-radius:24px;background:linear-gradient(135deg,rgba(255,90,31,0.25),rgba(255,131,79,0.05));border:1px solid rgba(255,90,31,0.35);box-shadow:0 0 35px rgba(255,90,31,0.3);animation:cdPulseGlow 2.2s infinite ease-in-out;"></div>
+    <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#ff5a1f,#ff834f);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(255,90,31,0.45);position:relative;z-index:1;">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h11l4 4v6a2 2 0 0 1-2 2H4z"/><path d="M4 8V6a2 2 0 0 1 2-2h9"/></svg>
+    </div>
+  </div>
+  <div style="font-weight:800;font-size:23px;letter-spacing:-0.5px;color:#ffffff;margin-bottom:6px;">ContentDock</div>
+  <div style="font-size:12px;color:#8e8e9c;margin-bottom:28px;letter-spacing:0.3px;">Plateforme de Publication Autonome · SQLite Local</div>
+  <div style="width:200px;height:4px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;position:relative;">
+    <div style="position:absolute;top:0;left:0;height:100%;background:linear-gradient(90deg,#ff5a1f,#ff834f);border-radius:99px;animation:cdLoaderAnim 1.5s ease-in-out infinite;"></div>
+  </div>
+  <div id="loader-subtext" style="font-size:11.5px;color:#60606e;margin-top:14px;letter-spacing:0.2px;">Initialisation de la base SQLite locale…</div>
+</div>
+<div id="root"></div>
+
+<script src="data.js"></script>
+<script src="database.js"></script>
+<script src="emailService.js"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="auth.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="views.jsx"></script>
+<script type="text/babel" src="calendar.jsx"></script>
+<script type="text/babel" src="extras.jsx"></script>
+<script type="text/babel" src="analytics.jsx"></script>
+<script type="text/babel" src="cmdk.jsx"></script>
+<script type="text/babel" src="attachments.jsx"></script>
+<script type="text/babel" src="features.jsx"></script>
+<script type="text/babel" src="collab.jsx"></script>
+<script type="text/babel" src="templates.jsx"></script>
+<script type="text/babel" src="integrations.jsx"></script>
+<script type="text/babel" src="pwa.jsx"></script>
+<script type="text/babel" src="ocr.jsx"></script>
+<script type="text/babel" src="assistant.jsx"></script>
+<script type="text/babel" src="team.jsx"></script>
+<script type="text/babel" src="settings.jsx"></script>
+<script type="text/babel" src="mobile.jsx"></script>
+<script type="text/babel" src="onboarding.jsx"></script>
+<script type="text/babel" src="detail.jsx"></script>
+<script type="text/babel" src="capture.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>

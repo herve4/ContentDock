@@ -78,10 +78,14 @@ function Topbar({ theme, onToggleTheme, onOpenCapture, onOpenCmdk, onOpenNotifs,
         {currentUser ? (
           <button
             className="avatar desktop-only"
-            style={{marginLeft:4, border:'none', cursor:'pointer', background:'linear-gradient(135deg, #ff5a1f, #ff834f)', color:'#fff', fontWeight:700}}
+            style={{marginLeft:4, border:'none', cursor:'pointer', background:'linear-gradient(135deg, #ff5a1f, #ff834f)', color:'#fff', fontWeight:700, padding: 0, overflow: 'hidden'}}
             onClick={onOpenSettings}
             title={`${currentUser.name} (${currentUser.email})`}>
-            {currentUser.avatar || currentUser.name.slice(0, 2).toUpperCase()}
+            {currentUser.avatar && currentUser.avatar.startsWith('http') ? (
+              <img src={currentUser.avatar} alt={currentUser.name} style={{width:'100%', height:'100%', borderRadius:'inherit', objectFit:'cover'}} referrerPolicy="no-referrer" />
+            ) : (
+              currentUser.avatar || currentUser.name.slice(0, 2).toUpperCase()
+            )}
           </button>
         ) : (
           <button
@@ -249,8 +253,12 @@ function Sidebar({ workspaces, tags = [], drafts, currentWs, onSelectWs, onSelec
         <div className="side-user">
           {currentUser ? (
             <>
-              <div className="avatar" style={{background:'linear-gradient(135deg, #ff5a1f, #ff834f)', color:'#fff', fontWeight:700}}>
-                {currentUser.avatar || currentUser.name.slice(0, 2).toUpperCase()}
+              <div className="avatar" style={{background:'linear-gradient(135deg, #ff5a1f, #ff834f)', color:'#fff', fontWeight:700, padding: 0, overflow: 'hidden'}}>
+                {currentUser.avatar && currentUser.avatar.startsWith('http') ? (
+                  <img src={currentUser.avatar} alt={currentUser.name} style={{width:'100%', height:'100%', borderRadius:'inherit', objectFit:'cover'}} referrerPolicy="no-referrer" />
+                ) : (
+                  currentUser.avatar || currentUser.name.slice(0, 2).toUpperCase()
+                )}
               </div>
               <div style={{overflow:'hidden', flex:1}}>
                 <div style={{color:'var(--text)', fontSize:12, fontWeight:600, whiteSpace:'nowrap', textOverflow:'ellipsis', overflow:'hidden'}}>

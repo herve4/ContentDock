@@ -20,8 +20,10 @@ android/local.properties
 android/*.iml
 android/app/*.iml
 
-# Temporary email relay and cache
+# Temporary email relay, secrets and cache
 .tmp*
+client_secret*.json
+*.secret.json
 send-invite-now.ps1
 send-collab-test.ps1
 invite.html

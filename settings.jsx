@@ -70,15 +70,19 @@ function ProfileTab({ onToast, currentUser, onOpenAuth, onLogout }) {
             gap: 12
           }}>
             <div style={{display:'flex', alignItems:'center', gap: 14}}>
-              <div className="settings-avatar" style={{background:'linear-gradient(135deg, #ff5a1f, #ff834f)', color:'#fff', fontWeight:700}}>
-                {currentUser.avatar || initials}
+              <div className="settings-avatar" style={{background:'linear-gradient(135deg, #ff5a1f, #ff834f)', color:'#fff', fontWeight:700, overflow: 'hidden', padding: 0}}>
+                {currentUser.avatar && currentUser.avatar.startsWith('http') ? (
+                  <img src={currentUser.avatar} alt={currentUser.name} style={{width:'100%', height:'100%', objectFit:'cover'}} referrerPolicy="no-referrer" />
+                ) : (
+                  currentUser.avatar || initials
+                )}
               </div>
               <div>
                 <div style={{fontWeight: 700, fontSize: 14, color:'var(--text, #fff)'}}>{currentUser.name}</div>
                 <div style={{fontSize: 12, color:'var(--text-3, #aaa)'}}>{currentUser.email}</div>
-                <div style={{marginTop: 4}}>
+                <div style={{marginTop: 4, display: 'flex', gap: 6, alignItems: 'center'}}>
                   <span style={{fontSize: 10.5, color: '#4ade80', background: 'rgba(74,222,128,0.12)', padding: '2px 8px', borderRadius: 4, fontWeight: 600}}>
-                    ✓ Compte SQLite vérifié
+                    ✓ {currentUser.authProvider === 'google' ? 'Connecté avec Google' : 'Compte SQLite vérifié'}
                   </span>
                 </div>
               </div>

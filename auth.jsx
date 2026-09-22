@@ -1,7 +1,21 @@
 // ContentDock — Authentification & Gestion des Droits (Guest-First & Feature Gating)
 // Intègre la connexion, inscription, validation OTP et mot de passe oublié via SQLite et SMTP Gmail
+// Supporte l'inscription et la connexion par compte Google via Google Identity Services
 
 const { useState: useStateAuth, useEffect: useEffectAuth, useRef: useRefAuth } = React;
+
+const GOOGLE_CLIENT_ID = '435154049964-8imqe75vvf0trcfo9m9uijcoetdclbtp.apps.googleusercontent.com';
+
+function GoogleBrandIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" style={{flexShrink: 0}}>
+      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.89c2.28-2.1 3.65-5.2 3.65-9.15z"/>
+      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.89-3.05c-1.08.72-2.45 1.16-4.04 1.16-3.11 0-5.74-2.1-6.68-4.93H1.21v3.15C3.25 21.43 7.31 24 12 24z"/>
+      <path fill="#FBBC05" d="M5.32 14.27c-.24-.73-.38-1.5-.38-2.27s.14-1.54.38-2.27V6.58H1.21C.44 8.11 0 9.99 0 12s.44 3.89 1.21 5.42l4.11-3.15z"/>
+      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.57 1.21 6.58l4.11 3.15c.94-2.83 3.57-4.98 6.68-4.98z"/>
+    </svg>
+  );
+}
 
 // ---------------- TOAST DE NOTIFICATION EMAIL SMTP ----------------
 function AuthEmailToast() {
@@ -79,6 +93,8 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
   const [newPassword, setNewPassword] = useStateAuth('');
   const [showPassword, setShowPassword] = useStateAuth(false);
   const [loading, setLoading] = useStateAuth(false);
+  const [googleLoading, setGoogleLoading] = useStateAuth(false);
+  const [showGoogleHelp, setShowGoogleHelp] = useStateAuth(false);
   const [error, setError] = useStateAuth('');
   const [info, setInfo] = useStateAuth('');
   const [countdown, setCountdown] = useStateAuth(0);
@@ -88,6 +104,8 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
       setView(initialView);
       setError('');
       setInfo('');
+      setGoogleLoading(false);
+      setShowGoogleHelp(false);
     }
   }, [isOpen, initialView]);
 
@@ -110,6 +128,125 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
     width: '100%',
     boxSizing: 'border-box',
     outline: 'none'
+  };
+
+  // 0. Authentification Google (Google Identity Services / OAuth 2.0)
+  const handleGoogleAuth = async () => {
+    setGoogleLoading(true);
+    setError('');
+    setInfo('');
+
+    const loadGsiScript = () => {
+      return new Promise((resolve, reject) => {
+        if (window.google?.accounts?.oauth2) {
+          resolve();
+          return;
+        }
+        const existing = document.getElementById('google-gsi-script');
+        if (existing) {
+          existing.addEventListener('load', () => resolve());
+          existing.addEventListener('error', () => reject(new Error('Échec du chargement du script Google.')));
+          return;
+        }
+        const script = document.createElement('script');
+        script.id = 'google-gsi-script';
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Impossible de contacter le service Google. Vérifiez votre connexion Internet.'));
+        document.head.appendChild(script);
+      });
+    };
+
+    try {
+      await loadGsiScript();
+
+      if (!window.google?.accounts?.oauth2) {
+        throw new Error('Service Google Identity Services indisponible.');
+      }
+
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'email profile openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) {
+            setGoogleLoading(false);
+            if (tokenResponse.error !== 'popup_closed_by_user') {
+              setError(`Erreur Google OAuth: ${tokenResponse.error_description || tokenResponse.error}`);
+              setShowGoogleHelp(true);
+            }
+            return;
+          }
+
+          try {
+            const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+            });
+            if (!resp.ok) throw new Error('Impossible de récupérer votre profil Google.');
+            const profile = await resp.json();
+
+            const db = window.ContentDockDB || window.CD_DB;
+            const authRes = await db.loginOrRegisterGoogleUser({
+              googleId: profile.sub,
+              email: profile.email,
+              name: profile.name || profile.given_name || profile.email.split('@')[0],
+              avatar: profile.picture
+            });
+
+            if (authRes.success) {
+              setGoogleLoading(false);
+              onSuccess(authRes.user);
+              onClose();
+            } else {
+              setGoogleLoading(false);
+              setError(authRes.error || 'Erreur lors de la validation du compte Google.');
+            }
+          } catch(fetchErr) {
+            setGoogleLoading(false);
+            setError(fetchErr.message || 'Erreur lors de la synchronisation du compte Google.');
+          }
+        },
+        error_callback: (err) => {
+          setGoogleLoading(false);
+          console.warn('[Google OAuth Error]', err);
+          setError('Google OAuth n’a pas pu s’ouvrir ou l’origine est non autorisée.');
+          setShowGoogleHelp(true);
+        }
+      });
+
+      client.requestAccessToken({ prompt: 'select_account' });
+    } catch (err) {
+      setGoogleLoading(false);
+      console.warn('[Google Sign-In Failed]', err);
+      setError(err.message || 'Erreur lors du lancement de Google Sign-In.');
+      setShowGoogleHelp(true);
+    }
+  };
+
+  const handleSimulateGoogleLogin = async (mockEmail = 'messanherve225@gmail.com', mockName = 'Hervé Wognin') => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const db = window.ContentDockDB || window.CD_DB;
+      const authRes = await db.loginOrRegisterGoogleUser({
+        googleId: 'g-user-' + btoa(mockEmail).replace(/[^a-zA-Z0-9]/g, '').slice(0, 12),
+        email: mockEmail,
+        name: mockName,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop'
+      });
+      if (authRes.success) {
+        setGoogleLoading(false);
+        onSuccess(authRes.user);
+        onClose();
+      } else {
+        setGoogleLoading(false);
+        setError(authRes.error || 'Erreur simulation');
+      }
+    } catch(e) {
+      setGoogleLoading(false);
+      setError(e.message);
+    }
   };
 
   // 1. Connexion
@@ -346,8 +483,95 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
         {view === 'login' && (
           <form onSubmit={handleSubmitLogin}>
             <div style={{fontWeight: 700, fontSize: 18, color:'var(--text, #fff)', marginBottom: 4}}>Connexion</div>
-            <div style={{fontSize: 12.5, color:'var(--text-4, #888)', marginBottom: 18}}>
+            <div style={{fontSize: 12.5, color:'var(--text-4, #888)', marginBottom: 16}}>
               Accédez à vos données synchronisées et à la collaboration d'équipe.
+            </div>
+
+            {/* Bouton Google Sign-In */}
+            <button
+              type="button"
+              onClick={handleGoogleAuth}
+              disabled={loading || googleLoading}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                background: '#ffffff',
+                color: '#1f1f1f',
+                fontSize: 13.5,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                cursor: (loading || googleLoading) ? 'wait' : 'pointer',
+                marginBottom: 12,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
+                transition: 'background 0.15s ease'
+              }}
+              onMouseEnter={e => { if (!loading && !googleLoading) e.currentTarget.style.background = '#f5f5f7'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; }}
+            >
+              <GoogleBrandIcon />
+              <span>{googleLoading ? 'Connexion Google…' : 'Continuer avec Google'}</span>
+            </button>
+
+            {showGoogleHelp && (
+              <div style={{
+                background: 'rgba(66, 133, 244, 0.08)',
+                border: '1px solid rgba(66, 133, 244, 0.35)',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontSize: 12,
+                color: '#bfdbfe',
+                marginBottom: 14,
+                lineHeight: 1.45
+              }}>
+                <div style={{fontWeight: 700, color: '#60a5fa', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6}}>
+                  <span>ℹ️</span> Configuration Google Cloud requise :
+                </div>
+                <div style={{color: '#cbd5e1', fontSize: 11.5, marginBottom: 8}}>
+                  L'origine locale actuelle (<code>{window.location.origin}</code>) doit être listée dans <em>Google Cloud Console &gt; Identifiants &gt; Origines JavaScript autorisées</em> de votre client OAuth.
+                </div>
+                <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulateGoogleLogin('messanherve225@gmail.com', 'Hervé Wognin')}
+                    style={{
+                      background: '#2563eb',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '5px 10px',
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}>
+                    Tester avec messanherve225@gmail.com
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowGoogleHelp(false)}
+                    style={{
+                      background: 'none',
+                      color: '#94a3b8',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      cursor: 'pointer'
+                    }}>
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{display: 'flex', alignItems: 'center', margin: '14px 0 16px 0'}}>
+              <div style={{flex: 1, height: 1, background: 'rgba(255,255,255,0.1)'}}></div>
+              <span style={{padding: '0 10px', fontSize: 11, color: 'var(--text-4, #888)', textTransform: 'uppercase', letterSpacing: 0.5}}>ou avec votre adresse email</span>
+              <div style={{flex: 1, height: 1, background: 'rgba(255,255,255,0.1)'}}></div>
             </div>
 
             <div style={{marginBottom: 14}}>
@@ -426,7 +650,94 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
           <form onSubmit={handleSubmitRegister}>
             <div style={{fontWeight: 700, fontSize: 18, color:'var(--text, #fff)', marginBottom: 4}}>Créer un compte</div>
             <div style={{fontSize: 12.5, color:'var(--text-4, #888)', marginBottom: 16}}>
-              Compte local autonome avec validation par email SMTP.
+              Compte autonome ou synchronisé avec Google.
+            </div>
+
+            {/* Bouton Google Sign-Up */}
+            <button
+              type="button"
+              onClick={handleGoogleAuth}
+              disabled={loading || googleLoading}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                background: '#ffffff',
+                color: '#1f1f1f',
+                fontSize: 13.5,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                cursor: (loading || googleLoading) ? 'wait' : 'pointer',
+                marginBottom: 12,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
+                transition: 'background 0.15s ease'
+              }}
+              onMouseEnter={e => { if (!loading && !googleLoading) e.currentTarget.style.background = '#f5f5f7'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; }}
+            >
+              <GoogleBrandIcon />
+              <span>{googleLoading ? 'Inscription Google…' : 'S’inscrire avec Google'}</span>
+            </button>
+
+            {showGoogleHelp && (
+              <div style={{
+                background: 'rgba(66, 133, 244, 0.08)',
+                border: '1px solid rgba(66, 133, 244, 0.35)',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontSize: 12,
+                color: '#bfdbfe',
+                marginBottom: 14,
+                lineHeight: 1.45
+              }}>
+                <div style={{fontWeight: 700, color: '#60a5fa', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6}}>
+                  <span>ℹ️</span> Configuration Google Cloud requise :
+                </div>
+                <div style={{color: '#cbd5e1', fontSize: 11.5, marginBottom: 8}}>
+                  L'origine locale actuelle (<code>{window.location.origin}</code>) doit être listée dans <em>Google Cloud Console &gt; Identifiants &gt; Origines JavaScript autorisées</em> de votre client OAuth.
+                </div>
+                <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulateGoogleLogin('messanherve225@gmail.com', 'Hervé Wognin')}
+                    style={{
+                      background: '#2563eb',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '5px 10px',
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}>
+                    Tester avec messanherve225@gmail.com
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowGoogleHelp(false)}
+                    style={{
+                      background: 'none',
+                      color: '#94a3b8',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      cursor: 'pointer'
+                    }}>
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{display: 'flex', alignItems: 'center', margin: '14px 0 16px 0'}}>
+              <div style={{flex: 1, height: 1, background: 'rgba(255,255,255,0.1)'}}></div>
+              <span style={{padding: '0 10px', fontSize: 11, color: 'var(--text-4, #888)', textTransform: 'uppercase', letterSpacing: 0.5}}>ou créer un compte par email</span>
+              <div style={{flex: 1, height: 1, background: 'rgba(255,255,255,0.1)'}}></div>
             </div>
 
             <div style={{marginBottom: 12}}>

@@ -89,11 +89,13 @@
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
+      password_hash TEXT,
       avatar TEXT,
       role TEXT DEFAULT 'creator',
       is_verified INTEGER DEFAULT 0,
       verification_code TEXT,
+      google_id TEXT,
+      auth_provider TEXT DEFAULT 'local',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       last_login TIMESTAMP
     );
@@ -211,7 +213,7 @@
     return null;
   }
 
-  const CURRENT_SCHEMA_VERSION = 3;
+  const CURRENT_SCHEMA_VERSION = 4;
 
   // Initialisation du moteur SQLite
   async function initDatabase() {
@@ -265,6 +267,18 @@
               }
             } catch(e) {}
 
+            // Ajout sécurisé des colonnes google_id et auth_provider sur users
+            try {
+              const uInfo = dbInstance.exec("PRAGMA table_info(users);");
+              const uCols = (uInfo && uInfo[0] && uInfo[0].values) ? uInfo[0].values.map(v => v[1]) : [];
+              if (!uCols.includes('google_id')) {
+                dbInstance.run("ALTER TABLE users ADD COLUMN google_id TEXT;");
+              }
+              if (!uCols.includes('auth_provider')) {
+                dbInstance.run("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local';");
+              }
+            } catch(e) {}
+
             dbInstance.run(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
             await persist();
             console.log(`[CD_DB] Migration v${CURRENT_SCHEMA_VERSION} réussie. Données conservées intactes.`);
@@ -275,6 +289,16 @@
               const cols = (tableInfo && tableInfo[0] && tableInfo[0].values) ? tableInfo[0].values.map(v => v[1]) : [];
               if (!cols.includes('attachments_json')) {
                 dbInstance.run("ALTER TABLE drafts ADD COLUMN attachments_json TEXT;");
+              }
+            } catch(e) {}
+            try {
+              const uInfo = dbInstance.exec("PRAGMA table_info(users);");
+              const uCols = (uInfo && uInfo[0] && uInfo[0].values) ? uInfo[0].values.map(v => v[1]) : [];
+              if (!uCols.includes('google_id')) {
+                dbInstance.run("ALTER TABLE users ADD COLUMN google_id TEXT;");
+              }
+              if (!uCols.includes('auth_provider')) {
+                dbInstance.run("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local';");
               }
             } catch(e) {}
           }
@@ -891,6 +915,91 @@
       return { success: true, user: safeUser };
     },
 
+    async loginOrRegisterGoogleUser({ googleId, email, name, avatar }) {
+      await initDatabase();
+      const normEmail = (email || '').trim().toLowerCase();
+      if (!normEmail) {
+        return { success: false, error: 'Adresse email Google introuvable.' };
+      }
+
+      let user = null;
+      // 1. Recherche par google_id si fourni
+      if (googleId) {
+        try {
+          const rowsById = querySql('SELECT * FROM users WHERE google_id = ?', [googleId]);
+          if (rowsById && rowsById.length > 0) user = rowsById[0];
+        } catch (e) {}
+      }
+
+      // 2. Recherche par adresse email si pas encore trouvé
+      if (!user) {
+        const rowsByEmail = querySql('SELECT * FROM users WHERE LOWER(email) = ?', [normEmail]);
+        if (rowsByEmail && rowsByEmail.length > 0) user = rowsByEmail[0];
+      }
+
+      const displayName = (name || normEmail.split('@')[0]).trim();
+      const avatarValue = avatar || displayName.slice(0, 2).toUpperCase();
+
+      if (user) {
+        // Utilisateur existant : mise à jour session, validation et google_id si absent
+        try {
+          runSql(
+            'UPDATE users SET is_verified = 1, last_login = CURRENT_TIMESTAMP, name = COALESCE(NULLIF(?, ""), name), avatar = COALESCE(?, avatar) WHERE id = ?',
+            [displayName, avatarValue, user.id]
+          );
+          if (googleId && !user.google_id) {
+            try {
+              runSql('UPDATE users SET google_id = ?, auth_provider = "google" WHERE id = ?', [googleId, user.id]);
+            } catch (e) {}
+          }
+          await persist();
+        } catch (e) {}
+        user.name = displayName || user.name;
+        user.avatar = avatarValue || user.avatar;
+        user.is_verified = 1;
+      } else {
+        // Nouvel utilisateur Google
+        const userId = 'u-g-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+        const pwdHash = 'GOOGLE_OAUTH_' + (googleId || Date.now());
+        try {
+          runSql(
+            'INSERT INTO users (id, name, email, password_hash, avatar, role, is_verified, verification_code, google_id, auth_provider) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [userId, displayName, normEmail, pwdHash, avatarValue, 'creator', 1, null, googleId || null, 'google']
+          );
+        } catch (err) {
+          // Fallback si colonnes pas encore créées
+          runSql(
+            'INSERT INTO users (id, name, email, password_hash, avatar, role, is_verified, verification_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [userId, displayName, normEmail, pwdHash, avatarValue, 'creator', 1, null]
+          );
+        }
+        await persist();
+        user = {
+          id: userId,
+          name: displayName,
+          email: normEmail,
+          avatar: avatarValue,
+          role: 'creator',
+          is_verified: 1,
+          google_id: googleId,
+          auth_provider: 'google'
+        };
+      }
+
+      const safeUser = {
+        id: user.id,
+        name: user.name || displayName,
+        email: user.email || normEmail,
+        avatar: user.avatar || avatarValue,
+        role: user.role || 'creator',
+        is_verified: 1,
+        authProvider: 'google'
+      };
+
+      this.setCurrentUser(safeUser);
+      return { success: true, user: safeUser };
+    },
+
     async verifyEmailCode({ email, code }) {
       await initDatabase();
       const normEmail = (email || '').trim().toLowerCase();
@@ -1020,6 +1129,11 @@
       return querySql(sql, params);
     }
   };
+
+  // Alias universel pour compatibilité
+  if (typeof window !== 'undefined') {
+    window.ContentDockDB = window.CD_DB;
+  }
 
   // Démarrage automatique au chargement
   if (typeof window !== 'undefined') {

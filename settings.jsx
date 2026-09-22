@@ -489,13 +489,29 @@ function DataTab({ onExportAll, onWipe }) {
     }
   };
 
+  const handleCleanDemo = async () => {
+    if (!window.CD_DB) return;
+    if (!confirm("Voulez-vous supprimer les anciens exemples factices de démo (brouillons et espaces de test) ? Vos propres contenus et espaces créés seront conservés.")) return;
+    try {
+      const res = await window.CD_DB.cleanDemoData();
+      if (res.success) {
+        alert("Données factices nettoyées avec succès ! L'application va s'actualiser avec un espace propre.");
+        window.location.reload();
+      } else {
+        alert("Erreur lors du nettoyage : " + res.error);
+      }
+    } catch(e) {
+      alert("Erreur : " + e.message);
+    }
+  };
+
   return (
     <div>
       <div className="settings-section">
-        <h2>Base de données SQLite (Locale & Autosuffisante)</h2>
+        <h2>Stockage Local & Données Sécurisées</h2>
         <div className="desc">
-          ContentDock fonctionne en mode <b>Local-First</b>. Vos données sont persistées dans un véritable fichier SQLite 
-          directement sur votre appareil (aucun serveur distant ni Django requis).
+          ContentDock fonctionne en mode <b>Local-First</b>. Vos données sont persistées directement sur votre appareil 
+          (aucun serveur distant requis, confidentialité absolue).
         </div>
 
         <div style={{
@@ -511,7 +527,7 @@ function DataTab({ onExportAll, onWipe }) {
           <div>
             <div style={{fontSize:11, color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'0.04em'}}>Moteur</div>
             <div style={{fontSize:13, fontWeight:600, color:'var(--accent)', marginTop:3}}>
-              {dbStats?.driver || 'SQLite 3'}
+              {dbStats?.driver || 'Moteur Local'}
             </div>
           </div>
           <div>
@@ -530,14 +546,17 @@ function DataTab({ onExportAll, onWipe }) {
           </div>
         </div>
 
-        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
           <button className="btn primary" onClick={() => onExportAll('sqlite')}>
-            <IconArchive/>Télécharger la base SQLite (.sqlite3)
+            <IconArchive/>Télécharger la base de données (.sqlite3)
           </button>
           <label className="btn ghost" style={{cursor:'pointer'}}>
-            <IconUpload/>{importing ? 'Import en cours…' : 'Importer un fichier .sqlite3'}
+            <IconUpload/>{importing ? 'Import en cours…' : 'Importer une base (.sqlite3)'}
             <input type="file" accept=".sqlite,.sqlite3,.db" onChange={handleImportSqlite} style={{display:'none'}}/>
           </label>
+          <button className="btn ghost" style={{color:'var(--danger, #f87171)'}} onClick={handleCleanDemo} title="Supprimer les anciens exemples de démo">
+            🧹 Nettoyer les données de démonstration
+          </button>
         </div>
       </div>
 

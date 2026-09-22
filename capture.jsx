@@ -273,9 +273,15 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
       </div>
 
       {attachPreview && (
-        <window.AttachmentPreview attachment={attachPreview}
-                                   onClose={() => setAttachPreview(null)}
-                                   onToast={onToast}/>
+        <window.AttachmentPreview
+          attachment={attachPreview}
+          onClose={() => setAttachPreview(null)}
+          onUpdate={(updatedAtt) => {
+            setAttachments(prev => prev.map(a => a.id === updatedAtt.id ? updatedAtt : a));
+            setAttachPreview(updatedAtt);
+          }}
+          onToast={onToast}
+        />
       )}
     </div>
   );

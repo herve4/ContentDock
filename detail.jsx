@@ -335,7 +335,29 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
   const [publishOpen, setPublishOpen] = useStateD(false);
   const [selectedMediaIndex, setSelectedMediaIndex] = useStateD(null);
   const [tagInputValue, setTagInputValue] = useStateD('');
+  const [newDocMenuOpen, setNewDocMenuOpen] = useStateD(false);
   const mediaFileInputRef = useRefD(null);
+
+  const handleAttachFiles = async (files) => {
+    if (!files || !files.length) return;
+    const newAtts = [];
+    for (let i = 0; i < files.length; i++) {
+      const att = await window.fileToAttachment(files[i]);
+      newAtts.push(att);
+    }
+    const updated = [...(draft.attachments || []), ...newAtts];
+    setField('attachments', updated);
+    onToast?.(`${newAtts.length} document${newAtts.length > 1 ? 's' : ''} joint${newAtts.length > 1 ? 's' : ''}`);
+  };
+
+  const handleCreateBlankDoc = (kind) => {
+    if (!window.createBlankDoc) return;
+    const newDoc = window.createBlankDoc(kind);
+    const updated = [...(draft.attachments || []), newDoc];
+    setField('attachments', updated);
+    setAttachPreview(newDoc);
+    onToast?.(`Nouveau document ${newDoc.name} créé`);
+  };
 
   useEffectD(() => {
     const onKey = e => { if (e.key === 'Escape' && selectedMediaIndex === null) onClose(); };
@@ -553,12 +575,85 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
                   {/* Domain extras: snippet + moodboard + attachments */}
                   {tab === 'body' && draft.code && <SnippetBlock code={draft.code} onToast={onToast}/>}
                   {tab === 'body' && (draft.palette || draft.typography) && <MoodboardBlock draft={draft} onToast={onToast}/>}
-                  {tab === 'body' && draft.attachments?.length > 0 && (
-                    <div style={{marginTop:14}}>
-                      <div className="d-side-label">Documents attachés ({draft.attachments.length})</div>
-                      <window.AttachmentList attachments={draft.attachments}
-                                              onRemove={id => setField('attachments', draft.attachments.filter(a => a.id !== id))}
-                                              onPreview={a => setAttachPreview(a)}/>
+                  {tab === 'body' && (
+                    <div style={{marginTop:16, borderTop:'1px solid var(--line, #282932)', paddingTop:14}}>
+                      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8, flexWrap:'wrap', gap:6}}>
+                        <div className="d-side-label" style={{margin:0}}>
+                          Documents & Fichiers ({draft.attachments?.length || 0})
+                        </div>
+                        <div style={{display:'flex', gap:6, alignItems:'center'}}>
+                          <label className="btn ghost" style={{padding:'3px 8px', fontSize:11, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4}} title="Joindre un fichier (PDF, Excel, Word, PPT...)">
+                            <IconUpload size={12}/>+ Joindre
+                            <input
+                              type="file"
+                              multiple
+                              accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.csv,.txt,.md,.json,.zip"
+                              onChange={e => { handleAttachFiles(e.target.files); e.target.value = ''; }}
+                              style={{display:'none'}}
+                            />
+                          </label>
+                          <div style={{position:'relative'}}>
+                            <button
+                              className="btn ghost"
+                              onClick={() => setNewDocMenuOpen(prev => !prev)}
+                              style={{padding:'3px 8px', fontSize:11}}
+                              title="Créer un nouveau document vierge"
+                            >
+                              + Nouveau ▾
+                            </button>
+                            {newDocMenuOpen && (
+                              <div
+                                style={{
+                                  position:'absolute', right:0, top:'100%', marginTop:4,
+                                  background:'var(--bg-2, #1a1b22)', border:'1px solid var(--line, #333)',
+                                  borderRadius:8, padding:4, minWidth:180, zIndex:100, boxShadow:'0 8px 24px rgba(0,0,0,0.5)'
+                                }}
+                              >
+                                <button
+                                  className="d-action"
+                                  style={{width:'100%', justifyContent:'flex-start', border:'none', background:'none', padding:'6px 10px', fontSize:11.5, textAlign:'left'}}
+                                  onClick={() => { handleCreateBlankDoc('docx'); setNewDocMenuOpen(false); }}
+                                >
+                                  📄 Document Word / Texte
+                                </button>
+                                <button
+                                  className="d-action"
+                                  style={{width:'100%', justifyContent:'flex-start', border:'none', background:'none', padding:'6px 10px', fontSize:11.5, textAlign:'left'}}
+                                  onClick={() => { handleCreateBlankDoc('xlsx'); setNewDocMenuOpen(false); }}
+                                >
+                                  📊 Tableur Excel / CSV
+                                </button>
+                                <button
+                                  className="d-action"
+                                  style={{width:'100%', justifyContent:'flex-start', border:'none', background:'none', padding:'6px 10px', fontSize:11.5, textAlign:'left'}}
+                                  onClick={() => { handleCreateBlankDoc('pptx'); setNewDocMenuOpen(false); }}
+                                >
+                                  📽️ Présentation Slides
+                                </button>
+                                <button
+                                  className="d-action"
+                                  style={{width:'100%', justifyContent:'flex-start', border:'none', background:'none', padding:'6px 10px', fontSize:11.5, textAlign:'left'}}
+                                  onClick={() => { handleCreateBlankDoc('md'); setNewDocMenuOpen(false); }}
+                                >
+                                  📝 Note Markdown
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {draft.attachments?.length > 0 ? (
+                        <window.AttachmentList
+                          attachments={draft.attachments}
+                          onRemove={id => setField('attachments', draft.attachments.filter(a => a.id !== id))}
+                          onPreview={a => setAttachPreview(a)}
+                        />
+                      ) : (
+                        <div style={{fontSize:11.5, color:'var(--text-4, #777)', fontStyle:'italic', padding:'8px 0'}}>
+                          Aucun document joint. Utilisez « + Joindre » ou « + Nouveau » pour ajouter des documents à ce brouillon.
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="d-copy-stats">
@@ -728,9 +823,16 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
         </div>
       </div>
       {attachPreview && (
-        <window.AttachmentPreview attachment={attachPreview}
-                                   onClose={() => setAttachPreview(null)}
-                                   onToast={onToast}/>
+        <window.AttachmentPreview
+          attachment={attachPreview}
+          onClose={() => setAttachPreview(null)}
+          onUpdate={(updatedAtt) => {
+            const updatedList = (draft.attachments || []).map(a => a.id === updatedAtt.id ? updatedAtt : a);
+            setField('attachments', updatedList);
+            setAttachPreview(updatedAtt);
+          }}
+          onToast={onToast}
+        />
       )}
       {publishOpen && (
         <window.PublishDialog draft={draft}

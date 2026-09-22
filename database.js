@@ -39,6 +39,7 @@
       palette_json TEXT,
       typography_json TEXT,
       code_json TEXT,
+      attachments_json TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (ws_id) REFERENCES workspaces(id) ON DELETE CASCADE
@@ -210,7 +211,7 @@
     return null;
   }
 
-  const CURRENT_SCHEMA_VERSION = 2;
+  const CURRENT_SCHEMA_VERSION = 3;
 
   // Initialisation du moteur SQLite
   async function initDatabase() {
@@ -255,11 +256,27 @@
             } catch(e) {}
             // Application du schéma non-destructif (CREATE TABLE IF NOT EXISTS)
             dbInstance.run(SCHEMA_SQL);
+            // Ajout sécurisé de la colonne attachments_json si non existante
+            try {
+              const tableInfo = dbInstance.exec("PRAGMA table_info(drafts);");
+              const cols = (tableInfo && tableInfo[0] && tableInfo[0].values) ? tableInfo[0].values.map(v => v[1]) : [];
+              if (!cols.includes('attachments_json')) {
+                dbInstance.run("ALTER TABLE drafts ADD COLUMN attachments_json TEXT;");
+              }
+            } catch(e) {}
+
             dbInstance.run(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
             await persist();
             console.log(`[CD_DB] Migration v${CURRENT_SCHEMA_VERSION} réussie. Données conservées intactes.`);
           } else {
             dbInstance.run(SCHEMA_SQL);
+            try {
+              const tableInfo = dbInstance.exec("PRAGMA table_info(drafts);");
+              const cols = (tableInfo && tableInfo[0] && tableInfo[0].values) ? tableInfo[0].values.map(v => v[1]) : [];
+              if (!cols.includes('attachments_json')) {
+                dbInstance.run("ALTER TABLE drafts ADD COLUMN attachments_json TEXT;");
+              }
+            } catch(e) {}
           }
           await seedDefaultData();
         } catch (e) {
@@ -297,62 +314,25 @@
 
   // Seed des données initiales si la base de données est vierge
   async function seedDefaultData() {
-    const seed = window.CD_DATA;
-    if (!seed) return;
+    // 0. Nettoyage automatique des anciennes données de démonstration factices
+    try {
+      runSql(`DELETE FROM drafts WHERE id IN ('d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','d13','d14','d15','d16','d17','d18','d19','d20')`);
+      runSql(`DELETE FROM workspaces WHERE id IN ('ws-graph', 'ws-dev', 'ws-cm-a', 'ws-cm-b') AND NOT EXISTS (SELECT 1 FROM drafts WHERE ws_id = workspaces.id)`);
+      runSql(`DELETE FROM tags WHERE id IN ('t-carrousel','t-promo','t-uiux','t-veille','t-snippet','t-launch','t-moodboard','t-shortform')`);
+    } catch(e) {}
 
-    // 1. Workspaces
-    if (Array.isArray(seed.workspaces)) {
-      for (const ws of seed.workspaces) {
+    // 1. Workspaces : S'assurer qu'au moins un espace propre existe
+    try {
+      const existingWs = querySql('SELECT id FROM workspaces LIMIT 1');
+      if (!existingWs || existingWs.length === 0) {
         runSql(
           'INSERT OR IGNORE INTO workspaces (id, name, slug, color, kind) VALUES (?, ?, ?, ?, ?)',
-          [ws.id, ws.name, ws.slug, ws.color, ws.kind || 'mixed']
+          ['ws-main', 'Mon Espace', 'mon-espace', '#ff5a1f', 'mixed']
         );
       }
-    }
+    } catch(e) {}
 
-    // 2. Tags
-    if (Array.isArray(seed.tags)) {
-      for (const t of seed.tags) {
-        runSql(
-          'INSERT OR IGNORE INTO tags (id, label, color, ws_id) VALUES (?, ?, ?, ?)',
-          [t.id, t.label, t.color, t.ws || null]
-        );
-      }
-    }
-
-    // 3. Drafts
-    if (Array.isArray(seed.drafts)) {
-      for (const d of seed.drafts) {
-        runSql(
-          `INSERT OR IGNORE INTO drafts (
-            id, ws_id, title, body, status, channel,
-            scheduled_day, scheduled_hour,
-            variants_json, hashtags_json, images_json, tags_json,
-            slides_json, palette_json, typography_json, code_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            d.id,
-            d.ws || 'ws-cm-a',
-            d.title || 'Sans titre',
-            d.body || '',
-            d.status || 'idea',
-            d.channel || 'ig',
-            d.scheduled ? d.scheduled.day : null,
-            d.scheduled ? d.scheduled.hour : null,
-            JSON.stringify(d.variants || {}),
-            JSON.stringify(d.hashtags || []),
-            JSON.stringify(d.images || []),
-            JSON.stringify(d.tags || []),
-            JSON.stringify(d.slides || []),
-            JSON.stringify(d.palette || []),
-            JSON.stringify(d.typography || []),
-            JSON.stringify(d.code || null)
-          ]
-        );
-      }
-    }
-
-    // 4. Utilisateur par défaut
+    // 2. Utilisateur par défaut
     try {
       const existingUsers = querySql('SELECT id FROM users LIMIT 1');
       if (!existingUsers || existingUsers.length === 0) {
@@ -364,7 +344,7 @@
       }
     } catch(e) {}
 
-    console.log('[CD_DB] Seed initial injecté dans la base SQLite.');
+    console.log('[CD_DB] Espace initial propre prêt.');
   }
 
   // Helper de hachage sécurisé SHA-256 (Web Crypto natif)
@@ -568,6 +548,7 @@
         palette: r.palette_json ? JSON.parse(r.palette_json) : [],
         typography: r.typography_json ? JSON.parse(r.typography_json) : [],
         code: r.code_json ? JSON.parse(r.code_json) : null,
+        attachments: r.attachments_json ? JSON.parse(r.attachments_json) : [],
         created_at: r.created_at,
         updated_at: r.updated_at
       }));
@@ -589,9 +570,9 @@
           id, ws_id, title, body, status, channel,
           scheduled_day, scheduled_hour,
           variants_json, hashtags_json, images_json, tags_json,
-          slides_json, palette_json, typography_json, code_json,
+          slides_json, palette_json, typography_json, code_json, attachments_json,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
           ws_id = excluded.ws_id,
           title = excluded.title,
@@ -608,10 +589,11 @@
           palette_json = excluded.palette_json,
           typography_json = excluded.typography_json,
           code_json = excluded.code_json,
+          attachments_json = excluded.attachments_json,
           updated_at = CURRENT_TIMESTAMP`,
         [
           draft.id,
-          draft.ws || draft.ws_id || 'ws-cm-a',
+          draft.ws || draft.ws_id || 'ws-main',
           draft.title || 'Sans titre',
           draft.body || '',
           draft.status || 'idea',
@@ -625,7 +607,8 @@
           JSON.stringify(draft.slides || []),
           JSON.stringify(draft.palette || []),
           JSON.stringify(draft.typography || []),
-          JSON.stringify(draft.code || null)
+          JSON.stringify(draft.code || null),
+          JSON.stringify(draft.attachments || [])
         ]
       );
       await persist();
@@ -997,6 +980,39 @@
 
     logoutUser() {
       this.setCurrentUser(null);
+    },
+
+    async cleanDemoData() {
+      await initDatabase();
+      try {
+        runSql(`DELETE FROM drafts WHERE id IN ('d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','d13','d14','d15','d16','d17','d18','d19','d20')`);
+        runSql(`DELETE FROM workspaces WHERE id IN ('ws-graph', 'ws-dev', 'ws-cm-a', 'ws-cm-b')`);
+        runSql(`DELETE FROM tags WHERE id IN ('t-carrousel','t-promo','t-uiux','t-veille','t-snippet','t-launch','t-moodboard','t-shortform')`);
+
+        const existingWs = querySql('SELECT id FROM workspaces LIMIT 1');
+        if (!existingWs || existingWs.length === 0) {
+          runSql(
+            'INSERT OR IGNORE INTO workspaces (id, name, slug, color, kind) VALUES (?, ?, ?, ?, ?)',
+            ['ws-main', 'Mon Espace', 'mon-espace', '#ff5a1f', 'mixed']
+          );
+        }
+
+        await persist();
+
+        const cleanWs = querySql('SELECT * FROM workspaces').map(w => ({ id: w.id, name: w.name, slug: w.slug, color: w.color, kind: w.kind }));
+        const cleanTags = querySql('SELECT * FROM tags').map(t => ({ id: t.id, label: t.label, color: t.color, ws: t.ws_id }));
+
+        try {
+          localStorage.setItem('cd-workspaces', JSON.stringify(cleanWs));
+          localStorage.setItem('cd-drafts-v3', JSON.stringify([]));
+          localStorage.setItem('cd-tags-v2', JSON.stringify(cleanTags));
+        } catch(e) {}
+
+        return { success: true, workspaces: cleanWs.length, drafts: 0 };
+      } catch(e) {
+        console.error('[CD_DB] Erreur cleanDemoData :', e);
+        return { success: false, error: e.message };
+      }
     },
 
     // Exécution de requête SQL arbitraire pour la console d'administration ou debugging

@@ -57,111 +57,57 @@ function can(user, workspace, perm) {
 // ============================================================
 const SEED_MEMBERS = [
   {
-    id: 'u-noemie', email: 'noemie@studio-rouages.fr', name: 'Noémie Moreau',
-    handle: 'noemie', color: '#f472b6', status: 'online',
+    id: 'u-owner', email: 'hervewognin264@gmail.com', name: 'Hervé Wognin',
+    handle: 'herve', color: '#ff5a1f', status: 'online',
     memberships: [
-      { ws: 'ws-graph', role: 'owner' },
-      { ws: 'ws-cm-a', role: 'admin' },
-      { ws: 'ws-cm-b', role: 'admin' },
-      { ws: 'ws-dev',  role: 'admin' },
+      { ws: 'ws-main', role: 'owner' },
     ],
-    joinedAt: Date.now() - 90 * 86400000,
-  },
-  {
-    id: 'u-tarik', email: 'tarik.benali@studio-rouages.fr', name: 'Tarik Benali',
-    handle: 'tarik', color: '#60a5fa', status: 'online',
-    memberships: [
-      { ws: 'ws-graph', role: 'editor' },
-      { ws: 'ws-cm-b', role: 'editor' },
-    ],
-    joinedAt: Date.now() - 60 * 86400000,
-  },
-  {
-    id: 'u-lea', email: 'lea.douard@studio-rouages.fr', name: 'Léa Douard',
-    handle: 'lea', color: '#4ade80', status: 'online',
-    memberships: [
-      { ws: 'ws-cm-a', role: 'editor' },
-      { ws: 'ws-cm-b', role: 'editor' },
-    ],
-    joinedAt: Date.now() - 45 * 86400000,
-  },
-  {
-    id: 'u-marc', email: 'marc.h@studio-rouages.fr', name: 'Marc Herbert',
-    handle: 'marc', color: '#a78bfa', status: 'away',
-    memberships: [
-      { ws: 'ws-dev', role: 'editor' },
-    ],
-    joinedAt: Date.now() - 30 * 86400000,
-  },
-  {
-    id: 'u-camille', email: 'camille@kombu-cafe.fr', name: 'Camille Rieux',
-    handle: 'camille', color: '#fbbf24', status: 'offline',
-    memberships: [
-      { ws: 'ws-cm-a', role: 'reviewer' },
-    ],
-    joinedAt: Date.now() - 20 * 86400000,
-  },
-  {
-    id: 'u-sophie', email: 'sophie@aurelia-skin.com', name: 'Sophie Chen',
-    handle: 'sophie', color: '#2dd4bf', status: 'offline',
-    memberships: [
-      { ws: 'ws-cm-b', role: 'reviewer' },
-    ],
-    joinedAt: Date.now() - 15 * 86400000,
+    joinedAt: Date.now(),
   },
 ];
 
-const SEED_INVITES = [
-  {
-    id: 'inv-1',
-    email: 'julien@kombu-cafe.fr',
-    role: 'viewer',
-    workspaces: ['ws-cm-a'],
-    invitedBy: 'u-noemie',
-    invitedAt: Date.now() - 2 * 86400000,
-    message: 'Salut Julien, voici l\'accès pour valider les posts avant publication.',
-    status: 'pending',
-  },
-  {
-    id: 'inv-2',
-    email: 'anna.martin@freelance.io',
-    role: 'editor',
-    workspaces: ['ws-graph'],
-    invitedBy: 'u-noemie',
-    invitedAt: Date.now() - 5 * 3600000,
-    message: '',
-    status: 'pending',
-  },
-];
+const SEED_INVITES = [];
 
 function loadMembers() {
-  try { return JSON.parse(localStorage.getItem('cd-members') || 'null') || SEED_MEMBERS; }
-  catch(e) { return SEED_MEMBERS; }
+  try {
+    const raw = localStorage.getItem('cd-members');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && !parsed.some(m => m.email?.includes('studio-rouages') || m.email?.includes('kombu-cafe'))) {
+        return parsed;
+      }
+    }
+  } catch(e) {}
+  saveMembers(SEED_MEMBERS);
+  return SEED_MEMBERS;
 }
 function saveMembers(m) { try { localStorage.setItem('cd-members', JSON.stringify(m)); } catch(e) {} }
+
 function loadInvites() {
-  try { return JSON.parse(localStorage.getItem('cd-invites') || 'null') || SEED_INVITES; }
-  catch(e) { return SEED_INVITES; }
+  try {
+    const raw = localStorage.getItem('cd-invites');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && !parsed.some(i => i.email?.includes('kombu-cafe') || i.email?.includes('freelance.io'))) {
+        return parsed;
+      }
+    }
+  } catch(e) {}
+  saveInvites(SEED_INVITES);
+  return SEED_INVITES;
 }
 function saveInvites(i) { try { localStorage.setItem('cd-invites', JSON.stringify(i)); } catch(e) {} }
 
 function loadActivity() {
   try {
     const stored = JSON.parse(localStorage.getItem('cd-activity') || 'null');
-    if (stored) return stored;
+    if (stored && Array.isArray(stored) && !stored.some(a => a.target?.includes('Céramiste') || a.target?.includes('Aurelia'))) return stored;
   } catch(e) {}
-  return SEED_ACTIVITY;
+  return [];
 }
 function saveActivity(a) { try { localStorage.setItem('cd-activity', JSON.stringify(a.slice(0, 100))); } catch(e) {} }
 
-const SEED_ACTIVITY = [
-  { id: 'act-1', ts: Date.now() - 3600000, actor: 'u-tarik', kind: 'draft.edit',    target: 'DA — Céramiste indépendant',     ws: 'ws-graph' },
-  { id: 'act-2', ts: Date.now() - 7200000, actor: 'u-lea',   kind: 'draft.publish', target: 'Récap semaine — 3 photos',        ws: 'ws-cm-a'  },
-  { id: 'act-3', ts: Date.now() - 3600000 * 5, actor: 'u-camille', kind: 'comment', target: 'Sérum n°03 — teasing lancement', ws: 'ws-cm-b'  },
-  { id: 'act-4', ts: Date.now() - 3600000 * 8, actor: 'u-noemie', kind: 'member.invite', target: 'julien@kombu-cafe.fr',       ws: 'ws-cm-a'  },
-  { id: 'act-5', ts: Date.now() - 86400000, actor: 'u-noemie', kind: 'draft.create', target: 'Moodboard — refonte Aurelia',   ws: 'ws-graph' },
-  { id: 'act-6', ts: Date.now() - 86400000 * 2, actor: 'u-tarik', kind: 'draft.review', target: 'Storytelling LinkedIn',      ws: 'ws-graph' },
-];
+const SEED_ACTIVITY = [];
 
 const ACTIVITY_LABELS = {
   'draft.create':  { icon: <IconPlus/>, verb: 'a créé' },

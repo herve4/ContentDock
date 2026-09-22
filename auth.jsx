@@ -308,7 +308,7 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
             </div>
             <div>
               <div style={{fontWeight: 800, fontSize: 17, color:'var(--text, #fff)'}}>ContentDock</div>
-              <div style={{fontSize: 11, color:'var(--text-4, #888)'}}>Base SQLite Locale · 100% Autonome</div>
+              <div style={{fontSize: 11, color:'var(--text-4, #888)'}}>Espace Sécurisé · 100% Local & Privé</div>
             </div>
           </div>
           <button className="icon-btn" onClick={onClose} title="Fermer (Continuer en invité)" style={{background:'none', border:'none', color:'var(--text-3, #999)', cursor:'pointer', fontSize: 16}}>✕</button>

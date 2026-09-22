@@ -58,34 +58,46 @@ function App() {
     return () => window.removeEventListener('cd-auth-change', onAuthChange);
   }, []);
 
-  // -------- Workspaces & Drafts (chargement & persistance SQLite locale) --------
+  // -------- Workspaces & Drafts (chargement & persistance locale) --------
   const [workspaces, setWorkspaces] = useStateA(() => {
     try {
       const saved = localStorage.getItem('cd-workspaces');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const clean = parsed.filter(w => !['ws-graph','ws-dev','ws-cm-a','ws-cm-b'].includes(w.id));
+        if (clean.length > 0) return clean;
+      }
     } catch(e) {}
-    return window.CD_DATA.workspaces;
+    return window.CD_DATA?.workspaces || [{ id: 'ws-main', name: 'Mon Espace', slug: 'mon-espace', color: '#ff5a1f', kind: 'mixed' }];
   });
 
   const [drafts, setDrafts] = useStateA(() => {
     try {
       const saved = localStorage.getItem('cd-drafts-v3');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const clean = parsed.filter(d => !/^d\d+$/.test(d.id) || !['ws-cm-a','ws-graph','ws-dev','ws-cm-b'].includes(d.ws || d.ws_id));
+        return clean;
+      }
     } catch(e) {}
-    return window.CD_DATA.drafts;
+    return window.CD_DATA?.drafts || [];
   });
 
   const [tags, setTags] = useStateA(() => {
     try {
       const saved = localStorage.getItem('cd-tags-v2');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const clean = parsed.filter(t => !['t-carrousel','t-promo','t-uiux','t-veille','t-snippet','t-launch','t-moodboard','t-shortform'].includes(t.id));
+        return clean;
+      }
     } catch(e) {}
     return window.CD_DATA?.tags || [];
   });
 
   const [tagFilter, setTagFilter] = useStateA(null);
 
-  // Synchronisation au démarrage avec la base SQLite locale
+  // Synchronisation au démarrage avec la base locale
   useEffectA(() => {
     let active = true;
     async function initSqliteData() {
@@ -102,18 +114,18 @@ function App() {
           setWorkspaces(sqlWs);
           try { localStorage.setItem('cd-workspaces', JSON.stringify(sqlWs)); } catch(e) {}
         }
-        if (Array.isArray(sqlDrafts) && sqlDrafts.length > 0) {
+        if (Array.isArray(sqlDrafts)) {
           setDrafts(sqlDrafts);
           try { localStorage.setItem('cd-drafts-v3', JSON.stringify(sqlDrafts)); } catch(e) {}
         }
-        if (Array.isArray(sqlTags) && sqlTags.length > 0) {
+        if (Array.isArray(sqlTags)) {
           setTags(sqlTags);
           window.CD_TAGS = sqlTags;
           try { localStorage.setItem('cd-tags-v2', JSON.stringify(sqlTags)); } catch(e) {}
         }
-        console.log('[ContentDock] Données (workspaces, drafts, tags) chargées depuis SQLite local.');
+        console.log('[ContentDock] Données initialisées avec succès.');
       } catch (err) {
-        console.warn('[ContentDock] Erreur de synchronisation SQLite :', err);
+        console.warn('[ContentDock] Erreur de synchronisation locale :', err);
       } finally {
         if (active) {
           setTimeout(() => {
@@ -235,7 +247,7 @@ function App() {
     if (window.CD_DB) {
       await window.CD_DB.saveTag(tag).catch(e => console.error('[SQLite] Erreur saveTag :', e));
     }
-    showToast(`Tag #${tag.label} créé dans SQLite local`);
+    showToast(`Tag #${tag.label} créé`);
   };
 
   const handleDeleteTag = async (tagId) => {
@@ -322,7 +334,7 @@ function App() {
       window.CD_DB.saveDraft(draft).catch(e => console.error('[SQLite] Erreur createDraft :', e));
     }
     notifs.push({ title: 'Brouillon capturé', desc: draft.title, icon: <IconPaste size={13}/>, draftId: draft.id, kind: 'capture' });
-    showToast('Brouillon créé — sauvegardé dans SQLite local');
+    showToast('Brouillon créé et sauvegardé');
     setTimeout(() => setOpenDraftId(draft.id), 300);
   };
 
@@ -337,7 +349,7 @@ function App() {
       window.CD_DB.saveWorkspace(ws).catch(e => console.error('[SQLite] Erreur saveWorkspace :', e));
     }
     setWsEditOpen(null);
-    showToast(wsEditOpen === 'new' ? `Espace « ${ws.name} » créé dans SQLite` : `« ${ws.name} » mis à jour`);
+    showToast(wsEditOpen === 'new' ? `Espace « ${ws.name} » créé` : `« ${ws.name} » mis à jour`);
   };
 
   const deleteWorkspace = id => {
@@ -349,7 +361,7 @@ function App() {
     }
     if (currentWs === id) setCurrentWs('all');
     setWsEditOpen(null);
-    showToast(`Espace « ${ws?.name} » supprimé de SQLite`);
+    showToast(`Espace « ${ws?.name || ''} » supprimé`);
   };
 
   // -------- GLOBAL PASTE --------
@@ -484,7 +496,7 @@ function App() {
     if (format === 'sqlite') {
       if (window.CD_DB) {
         await window.CD_DB.exportSqliteFile();
-        showToast('Base SQLite téléchargée (contentdock.sqlite3)');
+        showToast('Base de données téléchargée (contentdock.sqlite3)');
       }
     } else if (format === 'json') {
       const blob = new Blob([JSON.stringify({ workspaces, drafts }, null, 2)], { type: 'application/json' });

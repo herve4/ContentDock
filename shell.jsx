@@ -4,7 +4,34 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 const ChannelBadge = ({ ch, size = 18 }) => {
   const map = { ig: 'channel-ig', li: 'channel-li', x: 'channel-x', fb: 'channel-fb', tt: 'channel-tt', bl: 'channel-bl' };
   const label = { ig: 'IG', li: 'in', x: '𝕏', fb: 'f', tt: 'TT', bl: '≡' };
-  return <span className={`channel-badge ${map[ch] || ''}`} style={{ width: size, height: size }}>{label[ch] || '?'}</span>;
+  const channelData = (window.CD_DATA?.channels && window.CD_DATA.channels[ch]) || null;
+  const isDefault = map[ch];
+  const customShort = channelData?.short || label[ch] || (channelData?.label ? channelData.label.slice(0, 2).toUpperCase() : ch?.slice(0, 2)?.toUpperCase() || '?');
+  const customColor = channelData?.color;
+
+  return (
+    <span
+      className={`channel-badge ${isDefault || ''}`}
+      style={{
+        width: size,
+        height: size,
+        minWidth: size,
+        fontSize: Math.max(9, Math.round(size * 0.55)),
+        backgroundColor: (!isDefault && customColor) ? customColor : undefined,
+        borderColor: (!isDefault && customColor) ? customColor : undefined,
+        color: '#fff',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 4,
+        fontWeight: 700,
+        flexShrink: 0
+      }}
+      title={channelData?.label || ch}
+    >
+      {customShort}
+    </span>
+  );
 };
 
 const StatusPill = ({ status }) => {
@@ -362,4 +389,271 @@ function TagEditModal({ onClose, onSave, workspaces = [] }) {
   );
 }
 
-Object.assign(window, { Topbar, Sidebar, TagEditModal, ChannelBadge, StatusPill });
+function ChannelManagerModal({ channels = {}, onClose, onSaveChannel, onDeleteChannel, onToast }) {
+  const channelList = Object.values(channels || window.CD_DATA?.channels || {});
+  const [editingChannel, setEditingChannel] = useState(null);
+  const [label, setLabel] = useState('');
+  const [short, setShort] = useState('');
+  const [color, setColor] = useState('#ff5a1f');
+  const [icon, setIcon] = useState('📡');
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const CHANNEL_COLORS = [
+    '#ff5a1f', '#0A66C2', '#E1306C', '#1DA1F2', '#1877F2',
+    '#00F2FE', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1'
+  ];
+
+  const handleOpenCreate = () => {
+    setEditingChannel(null);
+    setLabel('');
+    setShort('');
+    setColor('#ff5a1f');
+    setIcon('📡');
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEdit = (ch) => {
+    setEditingChannel(ch);
+    setLabel(ch.label);
+    setShort(ch.short || ch.label.slice(0, 2).toUpperCase());
+    setColor(ch.color || '#ff5a1f');
+    setIcon(ch.icon || '📡');
+    setIsFormOpen(true);
+  };
+
+  const handleSave = () => {
+    const cleanLabel = label.trim();
+    if (!cleanLabel) return;
+    const cleanShort = (short.trim() || cleanLabel.slice(0, 2)).toUpperCase();
+    const id = editingChannel
+      ? editingChannel.id
+      : 'ch-' + cleanLabel.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) + '-' + Date.now().toString(36).slice(-3);
+
+    const channelObj = {
+      id,
+      label: cleanLabel,
+      short: cleanShort,
+      color,
+      icon: icon.trim() || '📡'
+    };
+
+    onSaveChannel(channelObj);
+    setIsFormOpen(false);
+    setEditingChannel(null);
+    onToast?.(`Canal « ${cleanLabel} » enregistré`);
+  };
+
+  const handleDelete = (ch) => {
+    onDeleteChannel(ch.id);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="ws-edit-modal" style={{maxWidth: 480, width: '92%'}}>
+        <div className="ws-edit-head" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+            <span style={{fontSize: 20}}>📡</span>
+            <span style={{fontWeight: 700, fontSize: 16}}>Gestion des Canaux Cibles</span>
+          </div>
+          <button className="icon-btn" onClick={onClose}><IconX size={15}/></button>
+        </div>
+
+        <div className="ws-edit-body" style={{maxHeight: '65vh', overflowY: 'auto', padding: '16px 20px'}}>
+          {!isFormOpen ? (
+            <div>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14}}>
+                <div style={{fontSize: 12.5, color: 'var(--text-3)'}}>
+                  {channelList.length} canaux configurés :
+                </div>
+                <button
+                  type="button"
+                  className="btn primary"
+                  style={{padding: '5px 12px', fontSize: 12}}
+                  onClick={handleOpenCreate}
+                >
+                  <IconPlus size={13}/>Nouveau canal
+                </button>
+              </div>
+
+              <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+                {channelList.map(ch => (
+                  <div
+                    key={ch.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '9px 12px',
+                      background: 'var(--bg-2)',
+                      border: '1px solid var(--line)',
+                      borderRadius: 8,
+                      gap: 10
+                    }}
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                      <ChannelBadge ch={ch.id} size={22}/>
+                      <div>
+                        <div style={{fontSize: 13, fontWeight: 600, color: 'var(--text)'}}>
+                          {ch.label}
+                        </div>
+                        <div style={{fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--mono)'}}>
+                          Code : {ch.short || ch.id} · ID : {ch.id}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        style={{padding: '4px 8px', fontSize: 11.5}}
+                        onClick={() => handleOpenEdit(ch)}
+                        title="Modifier ce canal"
+                      >
+                        ✏️ Modifier
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        style={{color: 'var(--danger, #f87171)', padding: 6}}
+                        onClick={() => handleDelete(ch)}
+                        title="Supprimer ce canal"
+                      >
+                        <IconTrash size={13}/>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14}}>
+                <span style={{fontWeight: 700, fontSize: 14, color: 'var(--text)'}}>
+                  {editingChannel ? `Modifier le canal « ${editingChannel.label} »` : 'Créer un nouveau canal cible'}
+                </span>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  style={{padding: '3px 8px', fontSize: 11}}
+                  onClick={() => setIsFormOpen(false)}
+                >
+                  ← Retour à la liste
+                </button>
+              </div>
+
+              <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+                <div>
+                  <label className="d-side-label" style={{display: 'block', marginBottom: 5}}>Nom du canal (ex: YouTube, Threads, Pinterest...)</label>
+                  <input
+                    type="text"
+                    className="settings-input"
+                    style={{width: '100%', boxSizing: 'border-box'}}
+                    value={label}
+                    autoFocus
+                    placeholder="Ex: YouTube"
+                    onChange={e => {
+                      setLabel(e.target.value);
+                      if (!editingChannel && !short) {
+                        setShort(e.target.value.slice(0, 3).toUpperCase());
+                      }
+                    }}
+                  />
+                </div>
+
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12}}>
+                  <div>
+                    <label className="d-side-label" style={{display: 'block', marginBottom: 5}}>Code court (max 4 car.)</label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      className="settings-input"
+                      style={{width: '100%', boxSizing: 'border-box', fontFamily: 'var(--mono)', textTransform: 'uppercase'}}
+                      value={short}
+                      placeholder="Ex: YT"
+                      onChange={e => setShort(e.target.value.toUpperCase())}
+                    />
+                  </div>
+                  <div>
+                    <label className="d-side-label" style={{display: 'block', marginBottom: 5}}>Icône / Emoji</label>
+                    <input
+                      type="text"
+                      className="settings-input"
+                      style={{width: '100%', boxSizing: 'border-box'}}
+                      value={icon}
+                      placeholder="Ex: 📺, 📸, 💼..."
+                      onChange={e => setIcon(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="d-side-label" style={{display: 'block', marginBottom: 6}}>Couleur de marque</label>
+                  <div className="color-picker-row" style={{marginBottom: 8}}>
+                    {CHANNEL_COLORS.map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={color === c ? 'selected' : ''}
+                        style={{background: c, width: 24, height: 24, borderRadius: '50%', border: color === c ? '2px solid #fff' : 'none', cursor: 'pointer'}}
+                        onClick={() => setColor(c)}
+                      />
+                    ))}
+                  </div>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={e => setColor(e.target.value)}
+                      style={{width: 32, height: 32, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer'}}
+                    />
+                    <span style={{fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-3)'}}>{color}</span>
+                  </div>
+                </div>
+
+                {/* Aperçu en direct */}
+                <div style={{background: 'var(--bg-1)', padding: '10px 14px', borderRadius: 8, border: '1px dashed var(--line)', display: 'flex', alignItems: 'center', gap: 12}}>
+                  <span style={{fontSize: 12, color: 'var(--text-4)'}}>Aperçu :</span>
+                  <span
+                    style={{
+                      background: color,
+                      color: '#fff',
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <span>{icon}</span>
+                    <span>{short || 'CH'}</span>
+                  </span>
+                  <span style={{fontSize: 13, fontWeight: 600, color: 'var(--text)'}}>{label || 'Nom du canal'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="ws-edit-foot">
+          {isFormOpen ? (
+            <>
+              <button type="button" className="btn ghost" onClick={() => setIsFormOpen(false)}>Annuler</button>
+              <button type="button" className="btn primary" onClick={handleSave} disabled={!label.trim()}>
+                <IconCheck size={14}/>{editingChannel ? 'Enregistrer les modifications' : 'Créer le canal'}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn ghost" style={{width: '100%', justifyContent: 'center'}} onClick={onClose}>
+              Fermer
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Topbar, Sidebar, TagEditModal, ChannelManagerModal, ChannelBadge, StatusPill });
+

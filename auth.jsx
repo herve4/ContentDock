@@ -92,9 +92,14 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
   const [otp, setOtp] = useStateAuth('');
   const [newPassword, setNewPassword] = useStateAuth('');
   const [showPassword, setShowPassword] = useStateAuth(false);
+  const isDesktop = Boolean(window.__TAURI__ || window.navigator.userAgent.includes('Tauri') || window.location.protocol === 'tauri:' || window.location.hostname === 'localhost');
   const [loading, setLoading] = useStateAuth(false);
   const [googleLoading, setGoogleLoading] = useStateAuth(false);
   const [showGoogleHelp, setShowGoogleHelp] = useStateAuth(false);
+  const [showDesktopGoogleModal, setShowDesktopGoogleModal] = useStateAuth(false);
+  const [desktopGoogleEmail, setDesktopGoogleEmail] = useStateAuth('messanherve225@gmail.com');
+  const [desktopGoogleName, setDesktopGoogleName] = useStateAuth('Hervé Wognin');
+  const [desktopImmediateVerify, setDesktopImmediateVerify] = useStateAuth(isDesktop);
   const [error, setError] = useStateAuth('');
   const [info, setInfo] = useStateAuth('');
   const [countdown, setCountdown] = useStateAuth(0);
@@ -106,6 +111,7 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
       setInfo('');
       setGoogleLoading(false);
       setShowGoogleHelp(false);
+      setShowDesktopGoogleModal(false);
     }
   }, [isOpen, initialView]);
 
@@ -130,8 +136,13 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
     outline: 'none'
   };
 
-  // 0. Authentification Google (Google Identity Services / OAuth 2.0)
+  // 0. Authentification Google (Google Identity Services / OAuth 2.0 / Bureau)
   const handleGoogleAuth = async () => {
+    // Dans l'application Bureau Tauri, Google GSI Web est bloqué par l'origine tauri://
+    if (isDesktop) {
+      setShowDesktopGoogleModal(true);
+      return;
+    }
     setGoogleLoading(true);
     setError('');
     setInfo('');
@@ -306,6 +317,21 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
     try {
       const code = window.EmailService.generateOTP(6);
       await window.ContentDockDB.registerUser({ name, email, password, code });
+
+      // Si mode Bureau avec activation directe activée
+      if (desktopImmediateVerify || isDesktop) {
+        const db = window.ContentDockDB || window.CD_DB;
+        if (db && typeof db.verifyUserDirectly === 'function') {
+          await db.verifyUserDirectly(email);
+        }
+        const loginRes = await window.ContentDockDB.loginUser({ email, password });
+        if (loginRes.success) {
+          onSuccess(loginRes.user);
+          onClose();
+          return;
+        }
+      }
+
       await window.EmailService.sendVerificationEmail(email, name, code);
       setView('verify-otp');
       setCountdown(60);
@@ -514,8 +540,66 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
               onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; }}
             >
               <GoogleBrandIcon />
-              <span>{googleLoading ? 'Connexion Google…' : 'Continuer avec Google'}</span>
+              <span>{googleLoading ? 'Connexion Google…' : isDesktop ? 'Continuer avec Google (Bureau)' : 'Continuer avec Google'}</span>
             </button>
+
+            {showDesktopGoogleModal && (
+              <div style={{
+                background: '#16181f',
+                border: '1px solid rgba(66, 133, 244, 0.5)',
+                borderRadius: 8,
+                padding: '14px 16px',
+                marginBottom: 16
+              }}>
+                <div style={{display:'flex', alignItems:'center', gap:8, marginBottom: 8, fontWeight: 700, color: '#60a5fa', fontSize: 13.5}}>
+                  <GoogleBrandIcon />
+                  <span>Connexion Google Bureau</span>
+                </div>
+                <div style={{fontSize: 12, color: '#cbd5e1', marginBottom: 12, lineHeight: 1.4}}>
+                  Connectez-vous immédiatement sous l'application bureau sans être bloqué par les restrictions de domaine web.
+                </div>
+                <div style={{marginBottom: 10}}>
+                  <label style={{fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 4}}>Adresse Google</label>
+                  <input
+                    type="email"
+                    value={desktopGoogleEmail}
+                    onChange={e => setDesktopGoogleEmail(e.target.value)}
+                    className="input"
+                    style={authInputStyle}
+                    placeholder="ex: messanherve225@gmail.com"
+                  />
+                </div>
+                <div style={{marginBottom: 12}}>
+                  <label style={{fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 4}}>Nom du compte</label>
+                  <input
+                    type="text"
+                    value={desktopGoogleName}
+                    onChange={e => setDesktopGoogleName(e.target.value)}
+                    className="input"
+                    style={authInputStyle}
+                    placeholder="Ex: Hervé Wognin"
+                  />
+                </div>
+                <div style={{display:'flex', gap: 8}}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{flex: 1, padding: '9px 12px', fontSize: 12.5, fontWeight: 600}}
+                    onClick={() => handleSimulateGoogleLogin(desktopGoogleEmail, desktopGoogleName)}
+                  >
+                    Valider &amp; Se connecter
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    style={{padding: '9px 12px', fontSize: 12.5}}
+                    onClick={() => setShowDesktopGoogleModal(false)}
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            )}
 
             {showGoogleHelp && (
               <div style={{
@@ -792,12 +876,25 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
               />
             </div>
 
+            <div style={{display:'flex', alignItems:'center', gap:8, marginBottom: 16}}>
+              <input
+                type="checkbox"
+                id="desk-immediate"
+                checked={desktopImmediateVerify}
+                onChange={e => setDesktopImmediateVerify(e.target.checked)}
+                style={{accentColor: '#ff5a1f', cursor: 'pointer', width: 16, height: 16}}
+              />
+              <label htmlFor="desk-immediate" style={{fontSize: 12, color: '#e2e8f0', cursor: 'pointer'}}>
+                {isDesktop ? 'Activer et connecter immédiatement ce compte Bureau (Recommandé)' : 'Activer immédiatement en mode local'}
+              </label>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
               className="btn-primary"
               style={{width:'100%', padding: '11px', fontWeight: 600, fontSize: 13.5, display:'flex', alignItems:'center', justifyContent:'center', gap: 6}}>
-              {loading ? 'Création en cours…' : 'Créer mon compte & Recevoir le code'}
+              {loading ? 'Création en cours…' : (desktopImmediateVerify ? 'Créer & Se connecter immédiatement' : 'Créer mon compte & Recevoir le code')}
             </button>
 
             <div style={{marginTop: 16, textAlign:'center', fontSize: 12.5, color:'var(--text-4, #888)'}}>
@@ -849,6 +946,51 @@ function AuthModal({ isOpen, initialView = 'login', onClose, onSuccess, reason =
               className="btn-primary"
               style={{width:'100%', padding: '11px', fontWeight: 600, fontSize: 13.5, display:'flex', alignItems:'center', justifyContent:'center', gap: 6}}>
               {loading ? 'Vérification…' : 'Valider & Débloquer mon compte'}
+            </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                setLoading(true);
+                setError('');
+                try {
+                  const db = window.ContentDockDB || window.CD_DB;
+                  if (db && typeof db.verifyUserDirectly === 'function') {
+                    await db.verifyUserDirectly(email);
+                  }
+                  const res = await window.ContentDockDB.loginUser({ email, password });
+                  if (res.success) {
+                    onSuccess(res.user);
+                    onClose();
+                  } else {
+                    setView('login');
+                    setInfo('Compte activé avec succès ! Connectez-vous avec votre mot de passe.');
+                  }
+                } catch(e) {
+                  setError(e.message || 'Erreur activation');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              style={{
+                width: '100%',
+                marginTop: 10,
+                padding: '10px',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.15))',
+                border: '1px solid rgba(16, 185, 129, 0.5)',
+                borderRadius: 6,
+                color: '#34d399',
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8
+              }}
+            >
+              <span>⚡</span> Activer immédiatement mon compte (Mode Bureau)
             </button>
 
             <div style={{marginTop: 18, textAlign:'center', fontSize: 12, color:'var(--text-4, #888)'}}>

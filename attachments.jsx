@@ -48,6 +48,61 @@ function detectLangFromExt(name) {
   return CODE_EXTS[ext] || null;
 }
 
+// --------- Détection intelligente du contenu (Code, Schémas, Diagrammes) ---------
+function detectLangFromContent(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.length < 4) return null;
+
+  // 1. Diagrammes Mermaid
+  if (/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|gitGraph)\b/im.test(trimmed)) {
+    return 'mermaid';
+  }
+
+  // 2. Schémas d'architecture IA & boîtes ASCII (+---+ , |  | , ┌──┐, flèches, etc.)
+  const hasBoxDrawingChars = /[─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]/.test(trimmed);
+  const hasAsciiBox = /(\+[-=]{2,}\+.*[\r\n]+.*\||\|.*[\r\n]+\+[-=]{2,}\+)/.test(trimmed);
+  const hasDiagramArrows = /(\s*-{2,}>\s*|\s*={2,}>\s*|\s*<-{2,}\s*|(\n\s*\|\s*\n\s*v))/i.test(trimmed);
+  if (trimmed.includes('\n') && (hasBoxDrawingChars || (hasAsciiBox && (hasDiagramArrows || trimmed.includes('+---'))) || (trimmed.includes('+---') && trimmed.includes('|')))) {
+    return 'diagram';
+  }
+
+  // 3. JSON valide
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      JSON.parse(trimmed);
+      return 'json';
+    } catch (e) {}
+  }
+
+  // 4. HTML / XML
+  if (/^<(!DOCTYPE\s+html|[a-z][a-z0-9]*\b[^>]*>)/i.test(trimmed)) {
+    return 'html';
+  }
+
+  // 5. Requêtes SQL
+  if (/\b(SELECT\s+.*FROM|INSERT\s+INTO|UPDATE\s+.*SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE)\b/i.test(trimmed)) {
+    return 'sql';
+  }
+
+  // 6. JavaScript / TypeScript
+  if (/\b(const\s+[a-zA-Z_$]|let\s+[a-zA-Z_$]|var\s+[a-zA-Z_$]|function\s*[a-zA-Z_$]*\s*\(|import\s+.*from\s+['"]|export\s+(default|const|function)|console\.(log|error|warn))\b/.test(trimmed)) {
+    return 'javascript';
+  }
+
+  // 7. Python
+  if (/\b(def\s+[a-zA-Z_]\w*\s*\(|class\s+[a-zA-Z_]\w*(\s*\(.*\))?\s*:|import\s+[a-zA-Z_]|from\s+[a-zA-Z_]\w*\s+import|if\s+__name__\s*==\s*['"]__main__['"]:)/.test(trimmed)) {
+    return 'python';
+  }
+
+  // 8. Markdown
+  if (/^(#{1,6}\s+|-\s+\[[ x]\]|```)/m.test(trimmed)) {
+    return 'markdown';
+  }
+
+  return null;
+}
+
 // --------- Helper Unzip OpenXML universel (sans dépendance externe) ---------
 async function extractZipEntries(buf) {
   const bytes = new Uint8Array(buf);
@@ -1260,6 +1315,7 @@ Object.assign(window, {
   createBlankDoc,
   detectKind,
   detectLangFromExt,
+  detectLangFromContent,
   AttachmentList,
   AttachmentPreview,
   SheetViewerEditor,

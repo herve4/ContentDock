@@ -1,7 +1,7 @@
 // Capture modal — real paste + drag & drop + universal attachments
 const { useState: useStateCap, useEffect: useEffectCap, useRef: useRefCap } = React;
 
-function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast }) {
+function CaptureModal({ workspaces, currentWs, channels, onManageChannels, seed, onClose, onCreate, onToast }) {
   const [text, setText] = useStateCap(seed?.text || '');
   const [images, setImages] = useStateCap([]);
   const [attachments, setAttachments] = useStateCap([]);
@@ -10,7 +10,8 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
   const [ws, setWs] = useStateCap(currentWs && currentWs !== 'all' && currentWs !== 'inbox' ? currentWs : workspaces[0].id);
   const wsObj = workspaces.find(w => w.id === ws);
   const isDev = wsObj?.kind === 'dev';
-  const [channel, setChannel] = useStateCap(isDev ? 'li' : 'ig');
+  const channelList = Array.isArray(channels) ? channels : Object.values(channels || window.CD_DATA?.channels || {});
+  const [channel, setChannel] = useStateCap(channelList[0]?.id || (isDev ? 'li' : 'ig'));
   const [detectedLang, setDetectedLang] = useStateCap(null);
   const dropRef = useRefCap(null);
 
@@ -33,12 +34,17 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
     }
   }, []);
 
-  // Detect code from pasted text (for dev workspaces)
+  // Détection intelligente sécurisée de code ou diagramme (évite tout crash)
   useEffectCap(() => {
-    if (isDev && text) {
-      const lang = window.detectLangFromContent(text);
-      setDetectedLang(lang);
-    } else {
+    try {
+      if (text && typeof window.detectLangFromContent === 'function') {
+        const lang = window.detectLangFromContent(text);
+        setDetectedLang(lang);
+      } else {
+        setDetectedLang(null);
+      }
+    } catch (err) {
+      console.warn('[Capture] Détection de langue ignorée avec sécurité :', err);
       setDetectedLang(null);
     }
   }, [text, isDev]);
@@ -135,12 +141,19 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
 
   const submit = () => {
     if (!hasContent) return;
-    // If dev workspace + code detected in text → save as code snippet
-    const isCode = isDev && detectedLang && text.trim().length > 20;
+    const isDiagram = detectedLang === 'diagram' || detectedLang === 'mermaid';
+    const isCode = isDev && detectedLang && !isDiagram && text.trim().length > 20;
+
+    // Extraction d'un titre représentatif même pour les schémas ASCII
+    const cleanLines = text.split('\n')
+      .map(l => l.replace(/^[#+\-|=*\s─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]+/, '').replace(/[#+\-|=*\s─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]+$/, '').trim())
+      .filter(l => l.length > 2);
+    const candidateTitle = cleanLines[0] || (isDiagram ? 'Schéma d’architecture IA' : attachments[0]?.name || 'Brouillon sans titre');
+
     const draft = {
       id: 'new-' + Date.now(),
       ws,
-      title: (text.split('\n')[0].replace(/^#+\s*/, '') || attachments[0]?.name || 'Brouillon sans titre').slice(0, 80),
+      title: candidateTitle.slice(0, 80),
       body: text,
       variants: {},
       hashtags: (text.match(/#[a-zA-Z0-9_]+/g) || []).map(s => s.slice(1)),
@@ -148,8 +161,9 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
       attachments,
       status: 'idea',
       channel,
-      tags: [],
+      tags: isDiagram ? ['diagramme'] : [],
       scheduled: null,
+      triage: 'pending'
     };
     if (isCode) {
       draft.code = { lang: detectedLang, source: text };
@@ -158,6 +172,8 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
     onCreate(draft);
     onClose();
   };
+
+  const isDiagramDetected = detectedLang === 'diagram' || detectedLang === 'mermaid';
 
   return (
     <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -180,9 +196,9 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
             <div className="drop-hint">
               <IconUpload/>
               <div className="big">Collez, glissez ou cliquez pour importer</div>
-              <div>Images, texte, PDF, Word, code, CSV, JSON — tout est accepté</div>
+              <div>Images, texte, diagrammes IA, PDF, Word, code, CSV — tout est accepté</div>
               <div style={{marginTop: 12, color:'var(--text-4)', fontFamily:'var(--mono)', fontSize:11}}>
-                💡 essayez de coller un PDF ou du code depuis votre éditeur
+                💡 collez un schéma d'architecture ou du texte directement
               </div>
             </div>
           ) : (
@@ -203,9 +219,23 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
                           {images.length > 1 && <div className="count-badge">+{images.length - 1}</div>}
                         </>
                       )
-                    ) : 'Aucun média — texte seul'}
+                    ) : (
+                      <div style={{padding: 8, textAlign: 'center'}}>
+                        {isDiagramDetected ? <span style={{fontSize: 28}}>📐</span> : 'Aucun média — texte seul'}
+                        {isDiagramDetected && <div style={{fontSize: 10.5, marginTop: 4, color: 'var(--accent)'}}>Schéma IA</div>}
+                      </div>
+                    )}
                   </div>
-                  <div className={`capture-preview-text ${!text ? 'empty' : ''}`}>
+                  <div
+                    className={`capture-preview-text ${!text ? 'empty' : ''}`}
+                    style={isDiagramDetected ? {
+                      fontFamily: 'var(--mono)',
+                      whiteSpace: 'pre',
+                      overflowX: 'auto',
+                      fontSize: 11,
+                      lineHeight: 1.35
+                    } : {}}
+                  >
                     {text || 'Aucun texte capturé — média seul'}
                   </div>
                 </div>
@@ -238,9 +268,21 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
               </select>
             </div>
             <div>
-              <div style={{fontSize:10.5, color:'var(--text-4)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4, fontWeight:500}}>Canal cible</div>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4}}>
+                <div style={{fontSize:10.5, color:'var(--text-4)', textTransform:'uppercase', letterSpacing:'0.05em', fontWeight:500}}>Canal cible</div>
+                {onManageChannels && (
+                  <button
+                    type="button"
+                    onClick={onManageChannels}
+                    style={{background:'none', border:'none', color:'var(--accent)', fontSize:10.5, cursor:'pointer', padding:0, fontWeight:600}}
+                    title="Gérer, ajouter ou supprimer des canaux cibles"
+                  >
+                    + Gérer
+                  </button>
+                )}
+              </div>
               <select className="d-select" value={channel} onChange={e => setChannel(e.target.value)}>
-                {Object.values(window.CD_DATA.channels).map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                {channelList.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
             </div>
             {images.length > 0 && (
@@ -251,7 +293,14 @@ function CaptureModal({ workspaces, currentWs, seed, onClose, onCreate, onToast 
           </div>
         )}
 
-        {detectedLang && isDev && text.length > 20 && (
+        {isDiagramDetected && (
+          <div style={{padding:'0 14px 10px', display:'flex', alignItems:'center', gap:8, color:'var(--accent)', fontSize:11, fontFamily:'var(--mono)'}}>
+            <IconHash size={12}/>
+            Schéma d’architecture / Diagramme détecté — mise en forme préservée
+          </div>
+        )}
+
+        {detectedLang && !isDiagramDetected && isDev && text.length > 20 && (
           <div style={{padding:'0 14px 10px', display:'flex', alignItems:'center', gap:8, color:'var(--info)', fontSize:11, fontFamily:'var(--mono)'}}>
             <IconHash size={12}/>
             Code <b style={{color:'var(--text)'}}>{detectedLang}</b> détecté — sera enregistré comme snippet

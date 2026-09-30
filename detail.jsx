@@ -328,7 +328,7 @@ function MediaLightboxModal({
   );
 }
 
-function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
+function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish, onDelete, channels, onManageChannels }) {
   const [tab, setTab] = useStateD('body'); // body | ig | li | x | preview
   const [copiedKey, setCopiedKey] = useStateD(null);
   const [attachPreview, setAttachPreview] = useStateD(null);
@@ -337,6 +337,16 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
   const [tagInputValue, setTagInputValue] = useStateD('');
   const [newDocMenuOpen, setNewDocMenuOpen] = useStateD(false);
   const mediaFileInputRef = useRefD(null);
+
+  const channelList = Array.isArray(channels) ? channels : Object.values(channels || window.CD_DATA?.channels || {});
+
+  const handleDeleteDraft = () => {
+    if (!onDelete) return;
+    if (confirm(`Supprimer définitivement le brouillon « ${draft.title || 'Sans titre'} » ?`)) {
+      onDelete(draft.id);
+      onClose();
+    }
+  };
 
   const handleAttachFiles = async (files) => {
     if (!files || !files.length) return;
@@ -462,6 +472,16 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
           <window.PresenceStack team={window.TEAM.filter(u => u.status === 'online')} maxVisible={3}/>
           <button className="d-action" onClick={() => onToast('Lien de revue copié (démo)')}><IconLink/>Partager</button>
           <button className="d-action primary" onClick={() => setPublishOpen(true)}><IconSend/>Publier</button>
+          {onDelete && (
+            <button
+              className="d-action danger"
+              onClick={handleDeleteDraft}
+              title="Supprimer définitivement ce brouillon"
+              style={{color: 'var(--danger, #f87171)', borderColor: 'rgba(239, 68, 68, 0.4)'}}
+            >
+              <IconTrash size={13}/>Supprimer
+            </button>
+          )}
           <button className="icon-btn" onClick={onClose} title="Fermer (Esc)"><IconX/></button>
         </div>
 
@@ -707,9 +727,21 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
               </div>
 
               <div className="d-side-block">
-                <div className="d-side-label">Canal principal</div>
+                <div className="d-side-label" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                  <span>Canal principal</span>
+                  {onManageChannels && (
+                    <button
+                      type="button"
+                      onClick={onManageChannels}
+                      style={{background:'none', border:'none', color:'var(--accent)', fontSize:11, cursor:'pointer', padding:0, fontWeight:600}}
+                      title="Gérer les canaux cibles"
+                    >
+                      ⚙️ Gérer
+                    </button>
+                  )}
+                </div>
                 <div className="d-channels">
-                  {Object.values(window.CD_DATA.channels).map(c => (
+                  {channelList.map(c => (
                     <button key={c.id}
                             className={`d-channel-btn ${draft.channel === c.id ? 'on' : ''}`}
                             onClick={() => setField('channel', c.id)}>
@@ -717,6 +749,50 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
                       {c.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="d-side-block">
+                <div className="d-side-label">Évaluation & Tri</div>
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                  <button
+                    type="button"
+                    className={`btn ${draft.triage === 'good' ? 'primary' : 'ghost'}`}
+                    style={{
+                      padding:'7px 10px',
+                      fontSize:11.5,
+                      justifyContent:'center',
+                      background: draft.triage === 'good' ? '#10b981' : undefined,
+                      borderColor: draft.triage === 'good' ? '#10b981' : undefined,
+                      color: draft.triage === 'good' ? '#fff' : undefined
+                    }}
+                    onClick={() => {
+                      const next = draft.triage === 'good' ? 'pending' : 'good';
+                      setField('triage', next);
+                      onToast?.(next === 'good' ? 'Brouillon retenu 👍' : 'Évaluation réinitialisée');
+                    }}
+                  >
+                    👍 Retenu (Bon)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${draft.triage === 'bad' ? 'primary' : 'ghost'}`}
+                    style={{
+                      padding:'7px 10px',
+                      fontSize:11.5,
+                      justifyContent:'center',
+                      background: draft.triage === 'bad' ? '#ef4444' : undefined,
+                      borderColor: draft.triage === 'bad' ? '#ef4444' : undefined,
+                      color: draft.triage === 'bad' ? '#fff' : undefined
+                    }}
+                    onClick={() => {
+                      const next = draft.triage === 'bad' ? 'pending' : 'bad';
+                      setField('triage', next);
+                      onToast?.(next === 'bad' ? 'Brouillon marqué à enlever 👎' : 'Évaluation réinitialisée');
+                    }}
+                  >
+                    👎 À enlever
+                  </button>
                 </div>
               </div>
 
@@ -811,9 +887,15 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish }) {
                         onClick={() => window.exportDraftAsZip(draft, onToast)}>
                   <IconDownload/>Exporter en ZIP
                 </button>
-                <button className="d-action" style={{width:'100%', justifyContent:'flex-start'}}>
-                  <IconTrash/>Archiver
-                </button>
+                {onDelete && (
+                  <button
+                    className="d-action danger"
+                    style={{width:'100%', justifyContent:'flex-start', color:'var(--danger, #f87171)', borderColor:'rgba(239, 68, 68, 0.35)'}}
+                    onClick={handleDeleteDraft}
+                  >
+                    <IconTrash size={13}/>Supprimer définitivement
+                  </button>
+                )}
               </div>
             </div>
           </div>

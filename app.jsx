@@ -95,6 +95,11 @@ function App() {
     return window.CD_DATA?.tags || [];
   });
 
+  const [channels, setChannels] = useStateA(() => {
+    return window.CD_DATA?.channels ? Object.values(window.CD_DATA.channels) : [];
+  });
+  const [channelModalOpen, setChannelModalOpen] = useStateA(false);
+
   const [tagFilter, setTagFilter] = useStateA(null);
 
   // Synchronisation au démarrage avec la base locale
@@ -104,10 +109,11 @@ function App() {
       if (!window.CD_DB) return;
       try {
         await window.CD_DB.init();
-        const [sqlWs, sqlDrafts, sqlTags] = await Promise.all([
+        const [sqlWs, sqlDrafts, sqlTags, sqlChannels] = await Promise.all([
           window.CD_DB.getWorkspaces(),
           window.CD_DB.getDrafts(),
-          window.CD_DB.getTags()
+          window.CD_DB.getTags(),
+          window.CD_DB.getChannels ? window.CD_DB.getChannels() : Promise.resolve([])
         ]);
         if (!active) return;
         if (Array.isArray(sqlWs) && sqlWs.length > 0) {
@@ -122,6 +128,12 @@ function App() {
           setTags(sqlTags);
           window.CD_TAGS = sqlTags;
           try { localStorage.setItem('cd-tags-v2', JSON.stringify(sqlTags)); } catch(e) {}
+        }
+        if (Array.isArray(sqlChannels) && sqlChannels.length > 0) {
+          setChannels(sqlChannels);
+          const map = {};
+          sqlChannels.forEach(c => { map[c.id] = c; });
+          if (window.CD_DATA) window.CD_DATA.channels = map;
         }
         console.log('[ContentDock] Données initialisées avec succès.');
       } catch (err) {
@@ -264,15 +276,117 @@ function App() {
     showToast(`Tag #${tObj?.label || ''} supprimé`);
   };
 
+  // -------- Canaux Cibles CRUD --------
+  const handleSaveChannel = async (channelObj) => {
+    setChannels(prev => {
+      const next = [...prev.filter(c => c.id !== channelObj.id), channelObj];
+      const map = {};
+      next.forEach(c => { map[c.id] = c; });
+      if (window.CD_DATA) window.CD_DATA.channels = map;
+      return next;
+    });
+    if (window.CD_DB?.saveChannel) {
+      await window.CD_DB.saveChannel(channelObj).catch(e => console.error('[SQLite] saveChannel error:', e));
+    }
+  };
+
+  const handleDeleteChannel = async (channelId) => {
+    const ch = channels.find(c => c.id === channelId);
+    if (!window.confirm(`Supprimer définitivement le canal cible « ${ch?.label || channelId} » ?`)) {
+      return;
+    }
+    setChannels(prev => {
+      const next = prev.filter(c => c.id !== channelId);
+      const map = {};
+      next.forEach(c => { map[c.id] = c; });
+      if (window.CD_DATA) window.CD_DATA.channels = map;
+      return next;
+    });
+    if (channelFilter === channelId) setChannelFilter('all');
+    if (window.CD_DB?.deleteChannel) {
+      await window.CD_DB.deleteChannel(channelId).catch(e => console.error('[SQLite] deleteChannel error:', e));
+    }
+    showToast(`Canal « ${ch?.label || channelId} » supprimé`);
+  };
+
+  // -------- Tri et Triage (Retenu / Rejeté) --------
+  const [triageFilter, setTriageFilter] = useStateA('all'); // 'all' | 'good' | 'bad' | 'pending'
+  const [sortBy, setSortBy] = useStateA('recent'); // 'recent' | 'oldest' | 'title-asc' | 'title-desc' | 'good-first'
+
+  const handleSetTriage = (id, newTriage) => {
+    setDrafts(prev => prev.map(d => {
+      if (d.id !== id) return d;
+      const current = d.triage || 'pending';
+      const finalTriage = current === newTriage ? 'pending' : newTriage;
+      const upd = { ...d, triage: finalTriage };
+      if (window.CD_DB?.saveDraft) {
+        window.CD_DB.saveDraft(upd).catch(e => console.error('[SQLite] saveDraft triage error:', e));
+      }
+      return upd;
+    }));
+  };
+
+  const handleDeleteAllBad = async () => {
+    const badDrafts = drafts.filter(d => d.triage === 'bad');
+    if (badDrafts.length === 0) {
+      showToast('Aucun élément rejeté à supprimer');
+      return;
+    }
+    if (!window.confirm(`Supprimer définitivement les ${badDrafts.length} éléments marqués « À enlever » ?`)) {
+      return;
+    }
+    const badIds = new Set(badDrafts.map(d => d.id));
+    setDrafts(prev => prev.filter(d => !badIds.has(d.id)));
+    if (openDraftId && badIds.has(openDraftId)) setOpenDraftId(null);
+    if (window.CD_DB?.deleteDraft) {
+      for (const b of badDrafts) {
+        await window.CD_DB.deleteDraft(b.id).catch(e => console.error(e));
+      }
+    }
+    showToast(`${badDrafts.length} élément(s) rejeté(s) supprimé(s)`);
+  };
+
+  const deleteDraft = async (draftId) => {
+    const d = drafts.find(x => x.id === draftId);
+    setDrafts(prev => prev.filter(x => x.id !== draftId));
+    if (openDraftId === draftId) setOpenDraftId(null);
+    if (window.CD_DB?.deleteDraft) {
+      await window.CD_DB.deleteDraft(draftId).catch(e => console.error('[SQLite] deleteDraft error:', e));
+    }
+    showToast(`Élément « ${d?.title || ''} » supprimé`);
+  };
+
   const visibleDrafts = useMemoA(() => {
     let list = drafts;
     if (currentWs === 'inbox') list = list.filter(d => !d.scheduled && d.status !== 'published');
-    else if (currentWs !== 'all') list = list.filter(d => d.ws === currentWs);
+    else if (currentWs !== 'all') list = list.filter(d => (d.ws || d.ws_id) === currentWs);
     if (statusFilter !== 'all') list = list.filter(d => d.status === statusFilter);
     if (channelFilter !== 'all') list = list.filter(d => d.channel === channelFilter);
     if (tagFilter) list = list.filter(d => (d.tags || []).includes(tagFilter));
-    return list;
-  }, [drafts, currentWs, statusFilter, channelFilter, tagFilter]);
+    if (triageFilter !== 'all') list = list.filter(d => (d.triage || 'pending') === triageFilter);
+
+    const sorted = [...list].sort((a, b) => {
+      if (sortBy === 'recent') {
+        return (b.created_at || b.id || '').localeCompare(a.created_at || a.id || '');
+      }
+      if (sortBy === 'oldest') {
+        return (a.created_at || a.id || '').localeCompare(b.created_at || b.id || '');
+      }
+      if (sortBy === 'title-asc') {
+        return (a.title || '').localeCompare(b.title || '');
+      }
+      if (sortBy === 'title-desc') {
+        return (b.title || '').localeCompare(a.title || '');
+      }
+      if (sortBy === 'good-first') {
+        const score = (t) => (t === 'good' ? 2 : t === 'pending' ? 1 : 0);
+        return score(b.triage) - score(a.triage);
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [drafts, currentWs, statusFilter, channelFilter, tagFilter, triageFilter, sortBy]);
 
   const openDraft_ = drafts.find(d => d.id === openDraftId);
 
@@ -602,7 +716,7 @@ function App() {
 
         <div className="main-body">
           {(view === 'storyboard' || view === 'kanban' || view === 'list') && (
-            <div className="filter-bar">
+            <div className="filter-bar" style={{flexWrap: 'wrap', gap: 6}}>
               <button className={`chip ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>
                 Tous statuts
               </button>
@@ -614,15 +728,68 @@ function App() {
                 </button>
               ))}
               <span className="filter-sep">·</span>
+
               <button className={`chip ${channelFilter === 'all' ? 'active' : ''}`} onClick={() => setChannelFilter('all')}>
                 Tous canaux
               </button>
-              {Object.values(window.CD_DATA.channels).map(c => (
+              {channels.map(c => (
                 <button key={c.id} className={`chip ${channelFilter === c.id ? 'active' : ''}`}
                         onClick={() => setChannelFilter(c.id === channelFilter ? 'all' : c.id)}>
                   <ChannelBadge ch={c.id} size={12}/>{c.label}
                 </button>
               ))}
+              <button
+                type="button"
+                className="chip"
+                onClick={() => setChannelModalOpen(true)}
+                title="Gérer, ajouter ou modifier les canaux cibles"
+                style={{borderColor: 'var(--accent-line)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              >
+                <IconPlus size={11}/> Canaux
+              </button>
+
+              <span className="filter-sep">·</span>
+
+              {/* Triage / Avis (Bon / À enlever) */}
+              <button
+                type="button"
+                className={`chip ${triageFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setTriageFilter('all')}
+                title="Tous les éléments"
+              >
+                Tous avis
+              </button>
+              <button
+                type="button"
+                className={`chip ${triageFilter === 'good' ? 'active' : ''}`}
+                onClick={() => setTriageFilter(triageFilter === 'good' ? 'all' : 'good')}
+                style={triageFilter === 'good' ? {background: '#10b981', color: '#fff', borderColor: '#10b981'} : {color: '#10b981'}}
+                title="Filtrer uniquement les éléments retenus"
+              >
+                👍 Retenus
+              </button>
+              <button
+                type="button"
+                className={`chip ${triageFilter === 'bad' ? 'active' : ''}`}
+                onClick={() => setTriageFilter(triageFilter === 'bad' ? 'all' : 'bad')}
+                style={triageFilter === 'bad' ? {background: '#ef4444', color: '#fff', borderColor: '#ef4444'} : {color: '#ef4444'}}
+                title="Filtrer uniquement les éléments rejetés"
+              >
+                👎 À enlever
+              </button>
+
+              {drafts.some(d => d.triage === 'bad') && (
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={handleDeleteAllBad}
+                  style={{background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  title="Supprimer définitivement tous les éléments rejetés"
+                >
+                  <IconTrash size={11}/> Vider les rejetés ({drafts.filter(d => d.triage === 'bad').length})
+                </button>
+              )}
+
               {tagFilter && (
                 <>
                   <span className="filter-sep">·</span>
@@ -636,14 +803,31 @@ function App() {
                   </button>
                 </>
               )}
-              <span className="filter-count">{visibleDrafts.length} résultats</span>
-              <button className="chip" style={{marginLeft:'auto'}} title="Trier"><IconFilter/>Trier</button>
+
+              <span className="filter-count" style={{marginLeft: 4}}>{visibleDrafts.length} résultats</span>
+
+              {/* Sélecteur de tri */}
+              <div style={{display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto'}}>
+                <span style={{fontSize: 12, color: 'var(--text-4)'}}>Tri :</span>
+                <select
+                  className="settings-input"
+                  style={{padding: '3px 8px', fontSize: 12, borderRadius: 6, height: 28, background: 'var(--bg-2)', color: 'var(--text)'}}
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value)}
+                >
+                  <option value="recent">Plus récents</option>
+                  <option value="oldest">Plus anciens</option>
+                  <option value="title-asc">Titre (A → Z)</option>
+                  <option value="title-desc">Titre (Z → A)</option>
+                  <option value="good-first">Retenus en premier</option>
+                </select>
+              </div>
             </div>
           )}
 
-          {view === 'storyboard' && <StoryboardView drafts={visibleDrafts} onOpen={openDraft}/>}
-          {view === 'kanban' && <KanbanView drafts={visibleDrafts} statuses={window.CD_DATA.statuses} onOpen={openDraft} onMove={moveDraft}/>}
-          {view === 'list' && <ListView drafts={visibleDrafts} onOpen={openDraft}/>}
+          {view === 'storyboard' && <StoryboardView drafts={visibleDrafts} onOpen={openDraft} onDelete={deleteDraft} onSetTriage={handleSetTriage}/>}
+          {view === 'kanban' && <KanbanView drafts={visibleDrafts} statuses={window.CD_DATA.statuses} onOpen={openDraft} onMove={moveDraft} onDelete={deleteDraft} onSetTriage={handleSetTriage}/>}
+          {view === 'list' && <ListView drafts={visibleDrafts} onOpen={openDraft} onDelete={deleteDraft} onSetTriage={handleSetTriage}/>}
           {view === 'calendar' && <CalendarView drafts={currentWs === 'all' || currentWs === 'inbox' ? drafts : drafts.filter(d => d.ws === currentWs)}
                                                  onOpen={openDraft}
                                                  onSchedule={scheduleDraft}
@@ -718,7 +902,10 @@ function App() {
         <DraftDrawer draft={openDraft_}
                      onClose={() => setOpenDraftId(null)}
                      onUpdate={updateDraft}
-                     onToast={showToast}/>
+                     onToast={showToast}
+                     onDelete={deleteDraft}
+                     channels={channels}
+                     onManageChannels={() => setChannelModalOpen(true)}/>
       )}
 
       {captureOpen && (
@@ -727,7 +914,9 @@ function App() {
                       seed={captureSeed}
                       onClose={() => { setCaptureOpen(false); setCaptureSeed(null); }}
                       onCreate={createDraft}
-                      onToast={showToast}/>
+                      onToast={showToast}
+                      channels={channels}
+                      onManageChannels={() => setChannelModalOpen(true)}/>
       )}
 
       {cmdkOpen && (
@@ -830,6 +1019,16 @@ function App() {
 
       {window.AuthEmailToast && <window.AuthEmailToast />}
 
+      {channelModalOpen && window.ChannelManagerModal && (
+        <window.ChannelManagerModal
+          channels={channels}
+          onClose={() => setChannelModalOpen(false)}
+          onSaveChannel={handleSaveChannel}
+          onDeleteChannel={handleDeleteChannel}
+          onToast={showToast}
+        />
+      )}
+
       <BottomNav view={view}
                  onView={setView}
                  onCapture={() => { setCaptureSeed(null); setCaptureOpen(true); }}
@@ -841,5 +1040,96 @@ function App() {
   );
 }
 
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('[ContentDock Fatal Error Intercepted]', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          backgroundColor: '#0a0a0b',
+          color: '#ececf1',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          padding: 24,
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>⚡</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px 0', color: '#ff5a1f' }}>
+            Erreur d'affichage interceptée
+          </h2>
+          <p style={{ color: '#a7a7b3', fontSize: 13.5, maxWidth: 500, margin: '0 0 16px 0', lineHeight: 1.5 }}>
+            L'application a évité l'écran noir. Vos données dans la base locale SQLite sont intactes et protégées.
+          </p>
+          <pre style={{
+            background: '#16161a',
+            border: '1px solid #33333d',
+            padding: '12px 16px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontFamily: 'var(--mono, monospace)',
+            color: '#f87171',
+            maxWidth: 620,
+            overflowX: 'auto',
+            marginBottom: 20,
+            textAlign: 'left'
+          }}>
+            {String(this.state.error?.stack || this.state.error?.message || this.state.error)}
+          </pre>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                background: '#ff5a1f',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 20px',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer'
+              }}
+            >
+              Recharger l'application
+            </button>
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              style={{
+                background: 'transparent',
+                color: '#ececf1',
+                border: '1px solid #33333d',
+                borderRadius: 8,
+                padding: '10px 20px',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer'
+              }}
+            >
+              Ignorer et continuer
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App/>);
+root.render(
+  <AppErrorBoundary>
+    <App/>
+  </AppErrorBoundary>
+);

@@ -99,6 +99,15 @@
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       last_login TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS channels (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      short TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#ff5a1f',
+      icon TEXT DEFAULT '📡',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `;
 
   // Gestionnaire de stockage binaire persistant pour SQLite (IndexedDB pour gros volumes)
@@ -213,7 +222,7 @@
     return null;
   }
 
-  const CURRENT_SCHEMA_VERSION = 4;
+  const CURRENT_SCHEMA_VERSION = 5;
 
   // Initialisation du moteur SQLite
   async function initDatabase() {
@@ -368,7 +377,28 @@
       }
     } catch(e) {}
 
-    console.log('[CD_DB] Espace initial propre prêt.');
+    // 3. Canaux cibles initiaux
+    try {
+      const existingCh = querySql('SELECT id FROM channels LIMIT 1');
+      if (!existingCh || existingCh.length === 0) {
+        const defaultChannels = [
+          ['ig', 'Instagram', 'IG', '#E1306C', '📸'],
+          ['li', 'LinkedIn', 'in', '#0A66C2', '💼'],
+          ['x', 'X', '𝕏', '#1DA1F2', '✖️'],
+          ['fb', 'Facebook', 'f', '#1877F2', '📘'],
+          ['tt', 'TikTok', 'TT', '#00F2FE', '🎵'],
+          ['bl', 'Blog', '≡', '#ff5a1f', '📝']
+        ];
+        for (const [cid, label, short, color, icon] of defaultChannels) {
+          runSql(
+            'INSERT OR IGNORE INTO channels (id, label, short, color, icon) VALUES (?, ?, ?, ?, ?)',
+            [cid, label, short, color, icon]
+          );
+        }
+      }
+    } catch(e) {}
+
+    console.log('[CD_DB] Espace initial et canaux prêts.');
   }
 
   // Helper de hachage sécurisé SHA-256 (Web Crypto natif)
@@ -419,14 +449,25 @@
     let memoryDrafts = [];
     let memoryTags = [];
     let memorySettings = {};
+    let memoryChannels = [
+      { id: 'ig', label: 'Instagram', short: 'IG', color: '#E1306C', icon: '📸' },
+      { id: 'li', label: 'LinkedIn',  short: 'in', color: '#0A66C2', icon: '💼' },
+      { id: 'x',  label: 'X',         short: '𝕏',  color: '#1DA1F2', icon: '✖️' },
+      { id: 'fb', label: 'Facebook',  short: 'f',  color: '#1877F2', icon: '📘' },
+      { id: 'tt', label: 'TikTok',    short: 'TT', color: '#00F2FE', icon: '🎵' },
+      { id: 'bl', label: 'Blog',      short: '≡',  color: '#ff5a1f', icon: '📝' },
+    ];
+    let memoryUsers = [];
 
     return {
       async init() {
         try {
           const w = localStorage.getItem('cd-workspaces');
           const d = localStorage.getItem('cd-drafts-v3');
+          const c = localStorage.getItem('cd-channels');
           if (w) memoryWorkspaces = JSON.parse(w);
           if (d) memoryDrafts = JSON.parse(d);
+          if (c) memoryChannels = JSON.parse(c);
         } catch (e) {}
 
         if (memoryWorkspaces.length === 0 && window.CD_DATA) {
@@ -446,6 +487,7 @@
         try {
           localStorage.setItem('cd-workspaces', JSON.stringify(memoryWorkspaces));
           localStorage.setItem('cd-drafts-v3', JSON.stringify(memoryDrafts));
+          localStorage.setItem('cd-channels', JSON.stringify(memoryChannels));
         } catch (e) {}
       },
       getWorkspaces: () => [...memoryWorkspaces],
@@ -480,6 +522,22 @@
             d.tags = d.tags.filter(t => t !== id);
           }
         });
+      },
+      getChannels: () => [...memoryChannels],
+      saveChannel: (ch) => {
+        const idx = memoryChannels.findIndex(c => c.id === ch.id);
+        if (idx >= 0) memoryChannels[idx] = ch;
+        else memoryChannels.push(ch);
+      },
+      deleteChannel: (id) => {
+        memoryChannels = memoryChannels.filter(c => c.id !== id);
+      },
+      verifyUserDirectly: (email) => {
+        const u = memoryUsers.find(x => x.email.toLowerCase() === email.toLowerCase());
+        if (!u) return { success: false, error: 'Compte introuvable.' };
+        u.is_verified = 1;
+        u.verification_code = null;
+        return { success: true, user: u };
       }
     };
   }
@@ -554,28 +612,32 @@
       sql += ' ORDER BY created_at DESC';
 
       const rows = querySql(sql, params);
-      return rows.map(r => ({
-        id: r.id,
-        ws: r.ws_id,
-        title: r.title,
-        body: r.body,
-        status: r.status,
-        channel: r.channel,
-        scheduled: (r.scheduled_day !== null && r.scheduled_day !== undefined)
-          ? { day: Number(r.scheduled_day), hour: Number(r.scheduled_hour || 12) }
-          : null,
-        variants: r.variants_json ? JSON.parse(r.variants_json) : {},
-        hashtags: r.hashtags_json ? JSON.parse(r.hashtags_json) : [],
-        images: r.images_json ? JSON.parse(r.images_json) : [],
-        tags: r.tags_json ? JSON.parse(r.tags_json) : [],
-        slides: r.slides_json ? JSON.parse(r.slides_json) : [],
-        palette: r.palette_json ? JSON.parse(r.palette_json) : [],
-        typography: r.typography_json ? JSON.parse(r.typography_json) : [],
-        code: r.code_json ? JSON.parse(r.code_json) : null,
-        attachments: r.attachments_json ? JSON.parse(r.attachments_json) : [],
-        created_at: r.created_at,
-        updated_at: r.updated_at
-      }));
+      return rows.map(r => {
+        const variants = r.variants_json ? JSON.parse(r.variants_json) : {};
+        return {
+          id: r.id,
+          ws: r.ws_id,
+          title: r.title,
+          body: r.body,
+          status: r.status,
+          channel: r.channel,
+          triage: variants._triage || variants.triage || 'pending',
+          scheduled: (r.scheduled_day !== null && r.scheduled_day !== undefined)
+            ? { day: Number(r.scheduled_day), hour: Number(r.scheduled_hour || 12) }
+            : null,
+          variants,
+          hashtags: r.hashtags_json ? JSON.parse(r.hashtags_json) : [],
+          images: r.images_json ? JSON.parse(r.images_json) : [],
+          tags: r.tags_json ? JSON.parse(r.tags_json) : [],
+          slides: r.slides_json ? JSON.parse(r.slides_json) : [],
+          palette: r.palette_json ? JSON.parse(r.palette_json) : [],
+          typography: r.typography_json ? JSON.parse(r.typography_json) : [],
+          code: r.code_json ? JSON.parse(r.code_json) : null,
+          attachments: r.attachments_json ? JSON.parse(r.attachments_json) : [],
+          created_at: r.created_at,
+          updated_at: r.updated_at
+        };
+      });
     },
 
     async saveDraft(draft) {
@@ -588,6 +650,10 @@
 
       const scheduledDay = draft.scheduled ? draft.scheduled.day : null;
       const scheduledHour = draft.scheduled ? draft.scheduled.hour : null;
+      const variantsWithTriage = {
+        ...(draft.variants || {}),
+        _triage: draft.triage || draft.variants?._triage || 'pending'
+      };
 
       runSql(
         `INSERT INTO drafts (
@@ -624,7 +690,7 @@
           draft.channel || 'ig',
           scheduledDay,
           scheduledHour,
-          JSON.stringify(draft.variants || {}),
+          JSON.stringify(variantsWithTriage),
           JSON.stringify(draft.hashtags || []),
           JSON.stringify(draft.images || []),
           JSON.stringify(draft.tags || []),
@@ -704,6 +770,64 @@
       } catch(e) {
         console.warn('[CD_DB] Nettoyage tags_json orphelin :', e);
       }
+      await persist();
+    },
+
+    // ---------------- CHANNELS (CANAUX CIBLES) ----------------
+    async getChannels() {
+      await initDatabase();
+      if (typeof dbInstance.getChannels === 'function') {
+        return dbInstance.getChannels();
+      }
+      try {
+        const rows = querySql('SELECT id, label, short, color, icon FROM channels ORDER BY created_at ASC');
+        if (rows && rows.length > 0) return rows;
+      } catch (e) {}
+      return [
+        { id: 'ig', label: 'Instagram', short: 'IG', color: '#E1306C', icon: '📸' },
+        { id: 'li', label: 'LinkedIn',  short: 'in', color: '#0A66C2', icon: '💼' },
+        { id: 'x',  label: 'X',         short: '𝕏',  color: '#1DA1F2', icon: '✖️' },
+        { id: 'fb', label: 'Facebook',  short: 'f',  color: '#1877F2', icon: '📘' },
+        { id: 'tt', label: 'TikTok',    short: 'TT', color: '#00F2FE', icon: '🎵' },
+        { id: 'bl', label: 'Blog',      short: '≡',  color: '#ff5a1f', icon: '📝' },
+      ];
+    },
+
+    async saveChannel(channel) {
+      await initDatabase();
+      if (typeof dbInstance.saveChannel === 'function') {
+        dbInstance.saveChannel(channel);
+        await persist();
+        return channel;
+      }
+      runSql(
+        `INSERT INTO channels (id, label, short, color, icon)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           label = excluded.label,
+           short = excluded.short,
+           color = excluded.color,
+           icon = excluded.icon`,
+        [
+          channel.id,
+          channel.label,
+          channel.short || channel.label.slice(0, 2).toUpperCase(),
+          channel.color || '#ff5a1f',
+          channel.icon || '📡'
+        ]
+      );
+      await persist();
+      return channel;
+    },
+
+    async deleteChannel(id) {
+      await initDatabase();
+      if (typeof dbInstance.deleteChannel === 'function') {
+        dbInstance.deleteChannel(id);
+        await persist();
+        return;
+      }
+      runSql('DELETE FROM channels WHERE id = ?', [id]);
       await persist();
     },
 
@@ -1016,6 +1140,28 @@
       runSql('UPDATE users SET is_verified = 1, verification_code = NULL WHERE id = ?', [user.id]);
       await persist();
 
+      const safeUser = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar || user.name.slice(0, 2).toUpperCase(),
+        role: user.role || 'creator',
+        is_verified: 1
+      };
+      this.setCurrentUser(safeUser);
+      return { success: true, user: safeUser };
+    },
+
+    async verifyUserDirectly(email) {
+      await initDatabase();
+      const normEmail = (email || '').trim().toLowerCase();
+      const rows = querySql('SELECT * FROM users WHERE LOWER(email) = ?', [normEmail]);
+      if (!rows || rows.length === 0) {
+        return { success: false, error: 'Compte introuvable.' };
+      }
+      const user = rows[0];
+      runSql('UPDATE users SET is_verified = 1, verification_code = NULL WHERE id = ?', [user.id]);
+      await persist();
       const safeUser = {
         id: user.id,
         name: user.name,

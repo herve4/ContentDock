@@ -51,28 +51,32 @@ function detectLangFromExt(name) {
 // --------- Détection intelligente du contenu (Code, Schémas, Diagrammes) ---------
 function detectLangFromContent(text) {
   if (!text || typeof text !== 'string') return null;
-  const trimmed = text.trim();
-  if (trimmed.length < 4) return null;
+  const sample = text.length > 8000 ? text.slice(0, 8000).trim() : text.trim();
+  if (sample.length < 4) return null;
 
   // 1. Diagrammes Mermaid
-  if (/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|gitGraph)\b/im.test(trimmed)) {
+  if (/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|gitGraph)\b/im.test(sample)) {
     return 'mermaid';
   }
 
   // 2. Schémas d'architecture IA & boîtes ASCII (+---+ , |  | , ┌──┐, flèches, etc.)
-  const hasBoxDrawingChars = /[─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]/.test(trimmed);
-  const hasAsciiBox = /(\+[-=]{2,}\+.*[\r\n]+.*\||\|.*[\r\n]+\+[-=]{2,}\+)/.test(trimmed);
-  const hasDiagramArrows = /(\s*-{2,}>\s*|\s*={2,}>\s*|\s*<-{2,}\s*|(\n\s*\|\s*\n\s*v))/i.test(trimmed);
-  if (trimmed.includes('\n') && (hasBoxDrawingChars || (hasAsciiBox && (hasDiagramArrows || trimmed.includes('+---'))) || (trimmed.includes('+---') && trimmed.includes('|')))) {
+  const hasBoxDrawingChars = /[─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]/.test(sample);
+  const hasAsciiBox = /(\+[-=]{2,}\+.*[\r\n]+.*\||\|.*[\r\n]+\+[-=]{2,}\+)/.test(sample);
+  const hasDiagramArrows = /(\s*-{2,}>\s*|\s*={2,}>\s*|\s*<-{2,}\s*|(\n\s*\|\s*\n\s*v))/i.test(sample);
+  if (sample.includes('\n') && (hasBoxDrawingChars || (hasAsciiBox && (hasDiagramArrows || sample.includes('+---'))) || (sample.includes('+---') && sample.includes('|')))) {
     return 'diagram';
   }
 
   // 3. JSON valide
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      JSON.parse(trimmed);
+  if ((sample.startsWith('{') && sample.endsWith('}')) || (sample.startsWith('[') && sample.endsWith(']'))) {
+    if (text.length < 50000) {
+      try {
+        JSON.parse(sample);
+        return 'json';
+      } catch (e) {}
+    } else {
       return 'json';
-    } catch (e) {}
+    }
   }
 
   // 4. HTML / XML

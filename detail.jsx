@@ -421,6 +421,46 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish, onDelete, c
     await copyText(parts.join('\n'), 'pack');
   };
 
+  const handleShareWhatsApp = async () => {
+    const formatted = window.formatDraftForWhatsApp
+      ? window.formatDraftForWhatsApp(draft, tab)
+      : (draft.title + '\n\n' + draft.body);
+
+    // Tentative de partage avec fichiers si supporté (ex: mobile / Capacitor)
+    if (navigator.share && draft.images && draft.images.length > 0) {
+      try {
+        const filesToShare = [];
+        for (let i = 0; i < Math.min(draft.images.length, 3); i++) {
+          const imgUrl = draft.images[i];
+          if (imgUrl.startsWith('data:') || imgUrl.startsWith('blob:')) {
+            const res = await fetch(imgUrl);
+            const blob = await res.blob();
+            filesToShare.push(new File([blob], `media-${i + 1}.jpg`, { type: blob.type || 'image/jpeg' }));
+          }
+        }
+        if (filesToShare.length > 0 && navigator.canShare && navigator.canShare({ files: filesToShare })) {
+          await navigator.share({
+            title: draft.title,
+            text: formatted,
+            files: filesToShare
+          });
+          onToast?.('Partagé avec succès !');
+          return;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.log('[WhatsApp Share] Fallback vers lien direct :', err);
+      }
+    }
+
+    if (window.shareToWhatsApp) {
+      window.shareToWhatsApp(formatted, onToast);
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(formatted)}`, '_blank');
+      onToast?.('Ouverture de WhatsApp…');
+    }
+  };
+
   const setBody = v => onUpdate({ ...draft, body: v });
   const setVariant = (k, v) => onUpdate({ ...draft, variants: { ...draft.variants, [k]: v } });
   const setField = (k, v) => onUpdate({ ...draft, [k]: v });
@@ -470,7 +510,14 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish, onDelete, c
           <StatusPill status={draft.status}/>
           <div style={{flex:1}}/>
           <window.PresenceStack team={window.TEAM.filter(u => u.status === 'online')} maxVisible={3}/>
-          <button className="d-action" onClick={() => onToast('Lien de revue copié (démo)')}><IconLink/>Partager</button>
+          <button
+            className="d-action"
+            style={{background: 'rgba(37, 211, 102, 0.16)', color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.45)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5}}
+            onClick={handleShareWhatsApp}
+            title="Partager ce contenu directement sur WhatsApp"
+          >
+            <span style={{fontSize: 14}}>💬</span> WhatsApp
+          </button>
           <button className="d-action primary" onClick={() => setPublishOpen(true)}><IconSend/>Publier</button>
           {onDelete && (
             <button
@@ -693,6 +740,18 @@ function DraftDrawer({ draft, onClose, onUpdate, onToast, onPublish, onDelete, c
                     <button className={`d-action ${copiedKey === 'pack' ? 'copied' : ''}`} onClick={copyPack}>
                       {copiedKey === 'pack' ? <IconCheck/> : <IconClipboard/>}
                       Copier légende + hashtags
+                    </button>
+                    <button
+                      className={`d-action ${copiedKey === 'wa' ? 'copied' : ''}`}
+                      style={{color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)'}}
+                      onClick={() => {
+                        const formatted = window.formatDraftForWhatsApp ? window.formatDraftForWhatsApp(draft, tab) : draft.body;
+                        copyText(formatted, 'wa');
+                      }}
+                      title="Copier le texte prêt à envoyer sur WhatsApp"
+                    >
+                      {copiedKey === 'wa' ? <IconCheck/> : <span>💬</span>}
+                      {copiedKey === 'wa' ? 'Copié pour WhatsApp !' : 'Copier texte WhatsApp'}
                     </button>
                     <button className="d-action" onClick={copyImage} disabled={!draft.images[0]}>
                       <IconImage/>Copier l'image

@@ -202,6 +202,26 @@ function StoryCard({ d, onClick, onDelete, onSetTriage }) {
             </button>
           </>
         )}
+        <button
+          type="button"
+          className="icon-btn"
+          title="Partager sur WhatsApp"
+          style={{
+            background: 'none',
+            color: '#25D366',
+            padding: '2px 5px',
+            borderRadius: 4,
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 12
+          }}
+          onClick={() => {
+            const formatted = window.formatDraftForWhatsApp ? window.formatDraftForWhatsApp(d) : (d.title + '\n\n' + d.body);
+            if (window.shareToWhatsApp) window.shareToWhatsApp(formatted);
+          }}
+        >
+          💬
+        </button>
         {onDelete && (
           <button
             type="button"
@@ -367,6 +387,18 @@ function KanbanView({ drafts, statuses, onOpen, onMove, onDelete, onSetTriage })
                         </button>
                       </>
                     )}
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Partager sur WhatsApp"
+                      style={{border:'none', background:'none', color:'#25D366', cursor:'pointer', padding: 2, fontSize: 11}}
+                      onClick={() => {
+                        const formatted = window.formatDraftForWhatsApp ? window.formatDraftForWhatsApp(d) : (d.title + '\n\n' + d.body);
+                        if (window.shareToWhatsApp) window.shareToWhatsApp(formatted);
+                      }}
+                    >
+                      💬
+                    </button>
                     {onDelete && (
                       <button
                         type="button"
@@ -518,6 +550,18 @@ function ListView({ drafts, onOpen, onDelete, onSetTriage }) {
                 </td>
                 <td onClick={e => e.stopPropagation()}>
                   <div style={{display: 'flex', alignItems: 'center', gap: 4}}>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Partager sur WhatsApp"
+                      style={{color: '#25D366', padding: 4}}
+                      onClick={() => {
+                        const formatted = window.formatDraftForWhatsApp ? window.formatDraftForWhatsApp(d) : (d.title + '\n\n' + d.body);
+                        if (window.shareToWhatsApp) window.shareToWhatsApp(formatted);
+                      }}
+                    >
+                      💬
+                    </button>
                     {onDelete && (
                       <button
                         type="button"

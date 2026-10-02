@@ -144,11 +144,15 @@ function CaptureModal({ workspaces, currentWs, channels, onManageChannels, seed,
     const isDiagram = detectedLang === 'diagram' || detectedLang === 'mermaid';
     const isCode = isDev && detectedLang && !isDiagram && text.trim().length > 20;
 
-    // Extraction d'un titre représentatif même pour les schémas ASCII
-    const cleanLines = text.split('\n')
+    // Extraction d'un titre représentatif même pour les schémas ASCII (échantillon pour préserver la mémoire)
+    const textSample = text.slice(0, 4000);
+    const cleanLines = textSample.split('\n')
       .map(l => l.replace(/^[#+\-|=*\s─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]+/, '').replace(/[#+\-|=*\s─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬]+$/, '').trim())
       .filter(l => l.length > 2);
     const candidateTitle = cleanLines[0] || (isDiagram ? 'Schéma d’architecture IA' : attachments[0]?.name || 'Brouillon sans titre');
+
+    const hashtagSample = text.length > 40000 ? text.slice(0, 40000) : text;
+    const hashtags = (hashtagSample.match(/#[a-zA-Z0-9_]+/g) || []).map(s => s.slice(1));
 
     const draft = {
       id: 'new-' + Date.now(),
@@ -156,7 +160,7 @@ function CaptureModal({ workspaces, currentWs, channels, onManageChannels, seed,
       title: candidateTitle.slice(0, 80),
       body: text,
       variants: {},
-      hashtags: (text.match(/#[a-zA-Z0-9_]+/g) || []).map(s => s.slice(1)),
+      hashtags,
       images: images.map(i => i.url),
       attachments,
       status: 'idea',
@@ -203,6 +207,23 @@ function CaptureModal({ workspaces, currentWs, channels, onManageChannels, seed,
             </div>
           ) : (
             <div style={{width:'100%'}}>
+              {((text && text.length > 20000) || (images && images.some(i => i.size > 6 * 1024 * 1024))) && (
+                <div style={{
+                  margin: '0 14px 12px',
+                  background: 'rgba(255, 90, 31, 0.12)',
+                  border: '1px solid rgba(255, 90, 31, 0.35)',
+                  borderRadius: 6,
+                  padding: '7px 12px',
+                  fontSize: 11.5,
+                  color: '#ff8a5c',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  <span style={{fontSize: 14}}>⚡</span>
+                  <span><strong>Élément volumineux capturé :</strong> Allégé et compressé automatiquement pour garantir une fluidité totale sans risque de mémoire.</span>
+                </div>
+              )}
               {(images.length > 0 || text) && (
                 <div className="capture-preview">
                   <div className={`capture-preview-media ${images.length === 0 ? 'empty' : ''}`}>
@@ -236,7 +257,11 @@ function CaptureModal({ workspaces, currentWs, channels, onManageChannels, seed,
                       lineHeight: 1.35
                     } : {}}
                   >
-                    {text || 'Aucun texte capturé — média seul'}
+                    {!text
+                      ? 'Aucun texte capturé — média seul'
+                      : (text.length > 25000
+                          ? text.slice(0, 25000) + `\n\n… [Aperçu limité aux 25 000 premiers caractères · ${text.length.toLocaleString('fr-FR')} caractères au total]`
+                          : text)}
                   </div>
                 </div>
               )}

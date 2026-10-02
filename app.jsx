@@ -162,7 +162,23 @@ function App() {
   }, [workspaces]);
 
   useEffectA(() => {
-    try { localStorage.setItem('cd-drafts-v3', JSON.stringify(drafts)); } catch(e) {}
+    try {
+      // Protection anti-Out-of-Memory : filtrage des médias lourds pour le cache localStorage
+      // (la persistance intégrale haute fidélité est garantie par SQLite et IndexedDB)
+      const lightDrafts = drafts.map(d => {
+        if (!d.images || d.images.length === 0) return d;
+        const safeImages = d.images.map(img => {
+          if (typeof img === 'string' && img.length > 50000) {
+            return img.slice(0, 100); // placeholder pour localStorage, l'original reste dans SQLite et React
+          }
+          return img;
+        });
+        return { ...d, images: safeImages };
+      });
+      localStorage.setItem('cd-drafts-v3', JSON.stringify(lightDrafts));
+    } catch(e) {
+      console.warn('[ContentDock] Quota localStorage préservé :', e);
+    }
   }, [drafts]);
 
   useEffectA(() => {
@@ -805,6 +821,31 @@ function App() {
               )}
 
               <span className="filter-count" style={{marginLeft: 4}}>{visibleDrafts.length} résultats</span>
+
+              {/* Partage WhatsApp global de tout l'espace */}
+              <button
+                type="button"
+                className="chip"
+                onClick={() => {
+                  const wsName = wsObj?.name || (currentWs === 'all' ? 'Tous les brouillons' : 'Mon Espace');
+                  const fullText = window.formatWorkspaceForWhatsApp ? window.formatWorkspaceForWhatsApp(wsName, visibleDrafts) : '';
+                  if (window.shareToWhatsApp) {
+                    window.shareToWhatsApp(fullText, showToast);
+                  }
+                }}
+                style={{
+                  background: 'rgba(37, 211, 102, 0.16)',
+                  color: '#25D366',
+                  borderColor: 'rgba(37, 211, 102, 0.45)',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+                title={`Partager les ${visibleDrafts.length} éléments de cet espace sur WhatsApp`}
+              >
+                <span style={{fontSize: 13}}>💬</span> Tout partager sur WhatsApp ({visibleDrafts.length})
+              </button>
 
               {/* Sélecteur de tri */}
               <div style={{display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto'}}>

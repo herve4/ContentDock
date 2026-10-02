@@ -173,15 +173,18 @@
     } catch (e) {
       console.warn('[CD_DB] Sauvegarde IndexedDB impossible', e);
     }
-    // Fallback localStorage (limité à ~5MB)
-    try {
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
+    // Fallback localStorage (strictement limité à < 3MB pour éviter tout Out of Memory)
+    if (bytes && bytes.length < 3 * 1024 * 1024) {
+      try {
+        const CHUNK_SIZE = 8192;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length)));
+        }
+        localStorage.setItem(DB_STORAGE_KEY, btoa(binary));
+      } catch (err) {
+        console.warn('[CD_DB] Fallback localStorage ignoré (quota ou mémoire) :', err);
       }
-      localStorage.setItem(DB_STORAGE_KEY, btoa(binary));
-    } catch (err) {
-      console.error('[CD_DB] Erreur lors de la sauvegarde binaire locale :', err);
     }
   }
 
